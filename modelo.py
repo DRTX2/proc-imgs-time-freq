@@ -1,245 +1,283 @@
-from pathlib import Path
-import cv2
 import numpy as np
-from collections import Counter
-
-# --- Configuración ---
-
-DEFAULT_IMAGE_PATH = Path("informe/formación estelar de W51.png")
+import cv2
+import math
 
 
-def buscar_imagen_inicial():
-    """Retorna la ruta de la imagen de prueba si existe."""
-    return DEFAULT_IMAGE_PATH if DEFAULT_IMAGE_PATH.exists() else None
+def cargar_imagen(ruta):
+    """Carga una imagen RGB desde disco."""
+    datos = np.fromfile(str(ruta), np.uint8)
+    img_bgr = cv2.imdecode(datos, cv2.IMREAD_COLOR)
+    if img_bgr is None:
+        raise ValueError(f"No se pudo cargar: {ruta}")
+    return cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
 
 
-def cargar_imagen(path=None):
+def agregar_ruido_sal_pimienta(imagen, intensidad):
     """
-    Carga una imagen desde disco y la retorna en formato RGB.
-    Si la ruta tiene caracteres especiales usa np.fromfile para evitar
-    problemas de codificación en Windows.
+    Agrega ruido impulsivo sal y pimienta.
+    intensidad: proporcion de pixeles afectados (0.0 a 1.0).
+    La mitad seran sal (255) y la otra mitad pimienta (0).
     """
-    if not path:
-        return np.zeros((320, 480, 3), dtype=np.uint8)
+    resultado = imagen.copy()
+    alto, ancho = resultado.shape[:2]
+    total = alto * ancho
 
-    try:
-        datos = np.fromfile(str(path), np.uint8)
-        img_bgr = cv2.imdecode(datos, cv2.IMREAD_COLOR)
+    n_sal = int(total * intensidad / 2)
+    n_pim = int(total * intensidad / 2)
 
-        if img_bgr is None:
-            raise ValueError("No se pudo decodificar la imagen")
+    # Sal (blanco)
+    fs = np.random.randint(0, alto, n_sal)
+    cs = np.random.randint(0, ancho, n_sal)
+    resultado[fs, cs] = 255
 
-        return cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    # Pimienta (negro)
+    fp = np.random.randint(0, alto, n_pim)
+    cp = np.random.randint(0, ancho, n_pim)
+    resultado[fp, cp] = 0
 
-    except Exception:
-        return np.zeros((320, 480, 3), dtype=np.uint8)
+    return resultado
 
 
-# --- Conversión a escala de grises ---
-
-def rgb_a_gris(img_rgb):
+def normalizar_histograma_rgb(imagen_rgb):
     """
-    Convierte RGB a escala de grises con pesos perceptuales (Luma BT.601).
-    Estos pesos se usan porque el ojo humano es más sensible al verde.
+    Normaliza el histograma de la imagen RGB aplicando expansión min-max
+    por cada canal independientemente, estirando los valores al rango [0, 255].
     """
-    r = img_rgb[:, :, 0].astype(np.float64)
-    g = img_rgb[:, :, 1].astype(np.float64)
-    b = img_rgb[:, :, 2].astype(np.float64)
+    resultado = np.zeros_like(imagen_rgb)
+    for c in range(3):
+        canal = imagen_rgb[:, :, c].astype(np.float32)
+        vmin = canal.min()
+        vmax = canal.max()
+        if vmax > vmin:
+            canal_norm = (canal - vmin) * 255.0 / (vmax - vmin)
+        else:
+            canal_norm = canal
+        resultado[:, :, c] = np.clip(canal_norm, 0, 255).astype(np.uint8)
+    return resultado
 
+
+def convertir_a_grises(imagen_rgb):
+    """RGB a escala de grises con pesos perceptuales Luma BT.601."""
+    r = imagen_rgb[:, :, 0].astype(np.float64)
+    g = imagen_rgb[:, :, 1].astype(np.float64)
+    b = imagen_rgb[:, :, 2].astype(np.float64)
     gris = 0.299 * r + 0.587 * g + 0.114 * b
-
     return np.clip(gris, 0, 255).astype(np.uint8)
 
 
-# --- Ruido sal y pimienta ---
+def binarizar_imagen(imagen_grises, threshold):
+    """Binariza: pixel >= threshold se vuelve 255, sino 0."""
+    return np.where(imagen_grises >= threshold, 255, 0).astype(np.uint8)
 
-def ruido_sal_pimienta(imagen_gris, probabilidad=0.05):
+
+def calcular_tamano_mascara_maximo(imagen):
     """
-    Agrega ruido impulsivo (sal y pimienta) a una imagen en escala de grises.
-    - probabilidad: porcentaje total de pixeles afectados (mitad sal, mitad pimienta).
+    Calcula el tamaño maximo permitido para la mascara espacial.
+    Es el 60% del lado menor de la imagen, redondeado al impar inferior.
     """
-    resultado = imagen_gris.copy()
-    alto, ancho = resultado.shape
-    total_pixeles = alto * ancho
-
-    # Cantidad de pixeles que se van a modificar
-    n_sal = int(total_pixeles * probabilidad / 2)
-    n_pimienta = int(total_pixeles * probabilidad / 2)
-
-    # Generamos posiciones aleatorias para la sal (blanco = 255)
-    filas_sal = np.random.randint(0, alto, n_sal)
-    cols_sal = np.random.randint(0, ancho, n_sal)
-    resultado[filas_sal, cols_sal] = 255
-
-    # Generamos posiciones aleatorias para la pimienta (negro = 0)
-    filas_pim = np.random.randint(0, alto, n_pimienta)
-    cols_pim = np.random.randint(0, ancho, n_pimienta)
-    resultado[filas_pim, cols_pim] = 0
-
-    return resultado
+    alto, ancho = imagen.shape[:2]
+    lado_menor = min(alto, ancho)
+    maximo = int(lado_menor * 0.6)
+    if maximo % 2 == 0:
+        maximo -= 1
+    return max(3, maximo)
 
 
-# --- Filtros de dominio espacial (convolución manual) ---
-
-def _extraer_vecindario(imagen, fila, col, tam_kernel):
+def convolucionar_manual(imagen, mascara):
     """
-    Extrae los pixeles vecinos alrededor de (fila, col) usando el tamaño
-    del kernel. Maneja los bordes recortando las coordenadas.
+    Convolución 2D con loops manuales.
+    Aplica padding con ceros para preservar el tamaño original.
+    No usa scipy.ndimage.convolve() ni cv2.filter2D().
     """
-    mitad = tam_kernel // 2
     alto, ancho = imagen.shape
-
-    f_ini = max(0, fila - mitad)
-    f_fin = min(alto, fila + mitad + 1)
-    c_ini = max(0, col - mitad)
-    c_fin = min(ancho, col + mitad + 1)
-
-    return imagen[f_ini:f_fin, c_ini:c_fin]
-
-
-def filtro_media(imagen_gris, tam_kernel=3):
-    """
-    Filtro de media (promedio): suaviza la imagen pero puede difuminar bordes.
-    Implementado con convolución manual usando un kernel de unos.
-    """
-    # Construimos el kernel de promedio
-    kernel = np.ones((tam_kernel, tam_kernel), dtype=np.float64)
-    kernel = kernel / kernel.sum()
-
-    return _convolucion_espacial(imagen_gris, kernel)
-
-
-def filtro_mediana(imagen_gris, tam_kernel=3):
-    """
-    Filtro de mediana: ordena los vecinos y toma el valor central.
-    Muy bueno para eliminar ruido sal y pimienta sin difuminar bordes.
-    """
-    alto, ancho = imagen_gris.shape
-    resultado = np.zeros_like(imagen_gris)
-
-    for i in range(alto):
-        for j in range(ancho):
-            vecinos = _extraer_vecindario(imagen_gris, i, j, tam_kernel)
-            resultado[i, j] = np.median(vecinos)
-
-    return resultado
-
-
-def filtro_moda(imagen_gris, tam_kernel=3):
-    """
-    Filtro de moda: asigna a cada pixel el valor más frecuente entre
-    sus vecinos. Util para imagenes con pocos niveles de gris.
-    """
-    alto, ancho = imagen_gris.shape
-    resultado = np.zeros_like(imagen_gris)
-
-    for i in range(alto):
-        for j in range(ancho):
-            vecinos = _extraer_vecindario(imagen_gris, i, j, tam_kernel)
-            valores = vecinos.flatten().tolist()
-            # Counter.most_common(1) nos da el valor más repetido
-            conteo = Counter(valores)
-            resultado[i, j] = conteo.most_common(1)[0][0]
-
-    return resultado
-
-
-def _convolucion_espacial(imagen_gris, kernel):
-    """
-    Aplica convolución 2D manual entre la imagen y un kernel dado.
-    Recorre pixel por pixel y multiplica por los pesos del kernel.
-    """
-    alto, ancho = imagen_gris.shape
-    kh, kw = kernel.shape
+    kh, kw = mascara.shape
     pad_h = kh // 2
     pad_w = kw // 2
 
-    # Padding con ceros para manejar los bordes
-    padded = np.pad(imagen_gris.astype(np.float64), ((pad_h, pad_h), (pad_w, pad_w)), mode='constant')
+    # Imagen con padding de ceros en los bordes
+    padded = np.zeros((alto + 2 * pad_h, ancho + 2 * pad_w), dtype=np.float64)
+    padded[pad_h:pad_h + alto, pad_w:pad_w + ancho] = imagen.astype(np.float64)
 
     resultado = np.zeros((alto, ancho), dtype=np.float64)
 
     for i in range(alto):
         for j in range(ancho):
-            region = padded[i:i + kh, j:j + kw]
-            resultado[i, j] = np.sum(region * kernel)
+            acumulador = 0.0
+            for ki in range(kh):
+                for kj in range(kw):
+                    acumulador += padded[i + ki, j + kj] * mascara[ki, kj]
+            resultado[i, j] = acumulador
 
     return np.clip(resultado, 0, 255).astype(np.uint8)
 
 
-# --- Dominio de frecuencia (FFT) ---
-
-def filtro_frecuencia_pasabajas(imagen_gris, radio=30):
+def filtro_media(imagen, tamano_mascara):
     """
-    Aplica un filtro pasabajas ideal en el dominio de la frecuencia:
-    1. Calcula la FFT 2D de la imagen
-    2. Centra el espectro (shift)
-    3. Crea una máscara circular con el radio dado
-    4. Multiplica el espectro por la máscara (convolución en frecuencia)
-    5. Aplica la FFT inversa para reconstruir la imagen filtrada
+    Filtro de media (promedio).
+    Crea una mascara de unos dividida entre n*n y la convoluciona.
     """
-    alto, ancho = imagen_gris.shape
+    n = tamano_mascara
+    mascara = np.ones((n, n), dtype=np.float64) / (n * n)
+    return convolucionar_manual(imagen, mascara)
 
-    # Transformada de Fourier 2D
-    espectro = np.fft.fft2(imagen_gris.astype(np.float64))
-    espectro_centrado = np.fft.fftshift(espectro)
 
-    # Construir mascara circular (filtro pasabajas ideal)
-    centro_y, centro_x = alto // 2, ancho // 2
-    mascara = np.zeros((alto, ancho), dtype=np.float64)
+def filtro_mediana(imagen, tamano_mascara):
+    """
+    Filtro de mediana con ordenamiento manual (insertion sort).
+    No usa numpy.median() ni scipy.ndimage.median_filter().
+    """
+    alto, ancho = imagen.shape
+    pad = tamano_mascara // 2
 
-    for y in range(alto):
-        for x in range(ancho):
-            distancia = np.sqrt((y - centro_y) ** 2 + (x - centro_x) ** 2)
-            if distancia <= radio:
-                mascara[y, x] = 1.0
+    padded = np.zeros((alto + 2 * pad, ancho + 2 * pad), dtype=np.uint8)
+    padded[pad:pad + alto, pad:pad + ancho] = imagen
 
-    # Aplicar mascara al espectro (equivale a convolución en dominio espacial)
-    espectro_filtrado = espectro_centrado * mascara
+    resultado = np.zeros((alto, ancho), dtype=np.uint8)
 
-    # Transformada inversa
-    espectro_deshift = np.fft.ifftshift(espectro_filtrado)
-    imagen_filtrada = np.fft.ifft2(espectro_deshift)
+    for i in range(alto):
+        for j in range(ancho):
+            # Extraer ventana manualmente
+            ventana = []
+            for ki in range(tamano_mascara):
+                for kj in range(tamano_mascara):
+                    ventana.append(int(padded[i + ki, j + kj]))
 
-    # Tomamos la magnitud (parte real) y normalizamos
-    resultado = np.abs(imagen_filtrada)
-    resultado = np.clip(resultado, 0, 255).astype(np.uint8)
+            # Ordenamiento por insercion (manual, sin sorted/numpy)
+            for a in range(1, len(ventana)):
+                clave = ventana[a]
+                b = a - 1
+                while b >= 0 and ventana[b] > clave:
+                    ventana[b + 1] = ventana[b]
+                    b -= 1
+                ventana[b + 1] = clave
+
+            # El valor central de la lista ordenada es la mediana
+            resultado[i, j] = ventana[len(ventana) // 2]
 
     return resultado
 
 
-def obtener_espectro_magnitud(imagen_gris):
+def filtro_moda(imagen, tamano_mascara):
     """
-    Calcula el espectro de magnitud (log) para visualizacion.
-    Se usa escala logaritmica porque los valores del espectro varian mucho.
+    Filtro de moda: asigna el valor mas frecuente de la ventana.
+    Cuenta frecuencias manualmente con diccionario, sin scipy.
     """
-    espectro = np.fft.fft2(imagen_gris.astype(np.float64))
+    alto, ancho = imagen.shape
+    pad = tamano_mascara // 2
+
+    padded = np.zeros((alto + 2 * pad, ancho + 2 * pad), dtype=np.uint8)
+    padded[pad:pad + alto, pad:pad + ancho] = imagen
+
+    resultado = np.zeros((alto, ancho), dtype=np.uint8)
+
+    for i in range(alto):
+        for j in range(ancho):
+            ventana = []
+            for ki in range(tamano_mascara):
+                for kj in range(tamano_mascara):
+                    ventana.append(int(padded[i + ki, j + kj]))
+
+            # Conteo de frecuencias manual
+            frecuencias = {}
+            for val in ventana:
+                if val in frecuencias:
+                    frecuencias[val] += 1
+                else:
+                    frecuencias[val] = 1
+
+            # Buscar el valor con mayor frecuencia
+            moda_val = ventana[0]
+            max_freq = 0
+            for val, freq in frecuencias.items():
+                if freq > max_freq:
+                    max_freq = freq
+                    moda_val = val
+
+            resultado[i, j] = moda_val
+
+    return resultado
+
+
+def crear_filtro_gaussiano(altura, ancho, sigma):
+    """
+    Crea mascara Gaussiana para filtro pasabajas en frecuencia.
+    H(u,v) = exp(-D(u,v)^2 / (2*sigma^2))
+    D(u,v) = sqrt((u - cy)^2 + (v - cx)^2)
+    Construida con loops manuales.
+    """
+    cy = altura // 2
+    cx = ancho // 2
+    filtro = np.zeros((altura, ancho), dtype=np.float64)
+
+    for u in range(altura):
+        for v in range(ancho):
+            d = math.sqrt((u - cy) ** 2 + (v - cx) ** 2)
+            filtro[u, v] = math.exp(-(d ** 2) / (2.0 * sigma ** 2))
+
+    return filtro
+
+
+def aplicar_filtro_frecuencia(espectro, filtro):
+    """
+    Multiplica espectro complejo por filtro real, punto a punto.
+    Implementado con loops manuales (sin operador * directo).
+    """
+    alto, ancho = espectro.shape
+    resultado = np.zeros_like(espectro)
+
+    for i in range(alto):
+        for j in range(ancho):
+            resultado[i, j] = espectro[i, j] * filtro[i, j]
+
+    return resultado
+
+
+def fourier_procesada_completa(imagen, sigma):
+    """
+    Pipeline completo de filtrado en frecuencia:
+    1. FFT 2D (numpy.fft.fft2)
+    2. Centrar espectro (fftshift)
+    3. Crear mascara Gaussiana manual
+    4. Multiplicar espectro x filtro manual
+    5. FFT inversa (numpy.fft.ifft2)
+    6. Tomar parte real, normalizar a [0, 255]
+
+    Retorna: (imagen_resultado, espectro_original, espectro_filtrado, mascara)
+    """
+    alto, ancho = imagen.shape
+
+    # Transformada directa
+    espectro = np.fft.fft2(imagen.astype(np.float64))
     espectro_centrado = np.fft.fftshift(espectro)
-    magnitud = np.abs(espectro_centrado)
 
-    # Log para comprimir el rango dinámico y que se vea bien
-    magnitud_log = np.log1p(magnitud)
+    # Mascara gaussiana (loops manuales)
+    mascara = crear_filtro_gaussiano(alto, ancho, sigma)
 
-    # Normalizar a [0, 255]
-    if magnitud_log.max() > 0:
-        magnitud_log = (magnitud_log / magnitud_log.max()) * 255
+    # Multiplicacion manual espectro x filtro
+    espectro_filtrado = aplicar_filtro_frecuencia(espectro_centrado, mascara)
 
-    return magnitud_log.astype(np.uint8)
+    # Transformada inversa
+    espectro_deshift = np.fft.ifftshift(espectro_filtrado)
+    reconstruida = np.fft.ifft2(espectro_deshift)
+    resultado = np.real(reconstruida)
+
+    # Normalizar al rango [0, 255]
+    vmin, vmax = resultado.min(), resultado.max()
+    if vmax > vmin:
+        resultado = (resultado - vmin) / (vmax - vmin) * 255.0
+
+    return (
+        np.clip(resultado, 0, 255).astype(np.uint8),
+        espectro_centrado,
+        espectro_filtrado,
+        mascara,
+    )
 
 
-# --- Binarización ---
-
-def binarizar(imagen_gris, umbral=None):
-    """
-    Binariza la imagen. Si no se pasa umbral, usa la media
-    de los valores de la imagen como threshold.
-    """
-    if umbral is None:
-        umbral = int(np.mean(imagen_gris))
-
-    return np.where(imagen_gris >= umbral, 255, 0).astype(np.uint8)
-
-
-def calcular_media(imagen_gris):
-    """Calcula el valor medio de los pixeles."""
-    return float(np.mean(imagen_gris))
+def espectro_log(espectro_complejo):
+    """Calcula magnitud en escala log para visualizacion: log(1 + |F|)."""
+    magnitud = np.abs(espectro_complejo)
+    log_mag = np.log1p(magnitud)
+    if log_mag.max() > 0:
+        log_mag = (log_mag / log_mag.max()) * 255.0
+    return log_mag.astype(np.uint8)
