@@ -203,6 +203,7 @@ class WorkerProcesoCompleto(QThread):
 
     def run(self):
         try:
+            print("[pipeline] Iniciando procesamiento completo...")
             img_rgb = self.args["img_rgb"]
             ruido = self.args["ruido"]
             tam_mascara = self.args["mascara"]
@@ -212,12 +213,15 @@ class WorkerProcesoCompleto(QThread):
 
             img_gris = modelo.convertir_a_grises(img_rgb)
             hist_gris = modelo.calcular_histograma_grises(img_gris)
+            print("[pipeline] Grises listos.")
 
             img_normalizada = modelo.normalizar_histograma_grises(img_gris)
             hist_normalizada = modelo.calcular_histograma_grises(img_normalizada)
+            print("[pipeline] Normalizacion lista.")
 
             img_binaria = modelo.binarizar_imagen(img_normalizada, umbral)
             img_ruido = modelo.agregar_ruido_sal_pimienta(img_binaria, ruido)
+            print("[pipeline] Binarizado y ruido listos.")
 
             if tipo_filtro == "Media":
                 resultado_espacial = modelo.filtro_media(img_ruido, tam_mascara)
@@ -225,10 +229,12 @@ class WorkerProcesoCompleto(QThread):
                 resultado_espacial = modelo.filtro_mediana(img_ruido, tam_mascara)
             else:
                 resultado_espacial = modelo.filtro_moda(img_ruido, tam_mascara)
+            print(f"[pipeline] Filtro espacial listo: {tipo_filtro}.")
 
             resultado_frecuencia = modelo.filtro_frecuencia_gaussiano(img_ruido, d0)
             diagnostico_frecuencia = modelo.diagnostico_frecuencia(img_ruido, d0)
             mapa_cambio = modelo.diferencia_absoluta_manual(img_ruido, resultado_espacial)
+            print("[pipeline] Frecuencia y mapa de cambio listos.")
 
             self.terminado.emit(
                 {
@@ -252,7 +258,9 @@ class WorkerProcesoCompleto(QThread):
                     "ruido_porcentaje": int(round(ruido * 100)),
                 }
             )
+            print("[pipeline] Todo el proceso termino bien.")
         except Exception as exc:
+            print(f"[pipeline] Error: {exc}")
             self.error.emit(str(exc))
 
 
@@ -726,8 +734,10 @@ class VentanaPrincipal(QMainWindow):
             return
 
         try:
+            # Cargar esto limpio ayuda bastante para revisar las demas etapas.
             self.img_rgb = modelo.cargar_imagen(ruta)
             alto, ancho = self.img_rgb.shape[:2]
+            print(f"[ui] Imagen cargada en la interfaz: {Path(ruta).name}")
 
             self.lbl_path.setText(Path(ruta).name)
             self.lbl_size.setText(f"{ancho} x {alto} px")
@@ -749,6 +759,7 @@ class VentanaPrincipal(QMainWindow):
         if self.worker and self.worker.isRunning():
             return
 
+        print("[ui] Limpiando resultados y reiniciando controles...")
         self.img_rgb = None
         self.lbl_path.setText("Ninguna imagen cargada")
         self.lbl_size.setText("")
@@ -767,6 +778,7 @@ class VentanaPrincipal(QMainWindow):
         if self.img_rgb is None:
             return
 
+        print("[ui] Lanzando procesamiento desde la interfaz...")
         self.btn_procesar.setEnabled(False)
         self.btn_cargar.setEnabled(False)
         self.btn_limpiar.setEnabled(False)
@@ -787,6 +799,8 @@ class VentanaPrincipal(QMainWindow):
         self.worker.start()
 
     def _on_proceso_listo(self, resultado):
+        # Esta es la parte bonita: ya se ve todo el recorrido completo.
+        print("[ui] Actualizando paneles con los resultados...")
         self.canvas_preprocesamiento.actualizar(resultado)
 
         filtro = resultado["tipo_filtro"]
@@ -821,8 +835,10 @@ class VentanaPrincipal(QMainWindow):
         self.btn_cargar.setEnabled(True)
         self.btn_limpiar.setEnabled(True)
         self.worker = None
+        print("[ui] Interfaz lista para otra prueba.")
 
     def _on_error(self, mensaje):
+        print(f"[ui] Se mostro un error en pantalla: {mensaje}")
         self.lbl_estado.setText(f"Error durante el proceso: {mensaje}")
         self.btn_procesar.setEnabled(self.img_rgb is not None)
         self.btn_cargar.setEnabled(True)

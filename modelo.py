@@ -7,15 +7,20 @@ import numpy as np
 
 def cargar_imagen(ruta):
     """Carga una imagen RGB desde disco."""
+    print(f"[modelo] Cargando imagen: {ruta}")
     datos = np.fromfile(str(ruta), np.uint8)
     img_bgr = cv2.imdecode(datos, cv2.IMREAD_COLOR)
     if img_bgr is None:
         raise ValueError(f"No se pudo cargar: {ruta}")
-    return cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    imagen_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    alto, ancho = imagen_rgb.shape[:2]
+    print(f"[modelo] Imagen lista: {ancho}x{alto}")
+    return imagen_rgb
 
 
 def convertir_a_grises(imagen_rgb):
     """Convierte RGB a grises usando una pasada pixel a pixel."""
+    print("[modelo] Pasando a escala de grises...")
     alto, ancho = imagen_rgb.shape[:2]
     gris = np.zeros((alto, ancho), dtype=np.uint8)
 
@@ -36,6 +41,7 @@ def convertir_a_grises(imagen_rgb):
 
 def normalizar_histograma_grises(imagen_gris):
     """Ecualiza el histograma de una imagen en grises con conteo manual."""
+    print("[modelo] Ecualizando histograma...")
     alto, ancho = imagen_gris.shape
     histograma = [0] * 256
 
@@ -86,6 +92,7 @@ def calcular_histograma_grises(imagen_gris):
 
 def binarizar_imagen(imagen_gris, umbral):
     """Binariza manualmente una imagen en grises."""
+    print(f"[modelo] Binarizando con umbral {umbral}...")
     alto, ancho = imagen_gris.shape
     resultado = np.zeros((alto, ancho), dtype=np.uint8)
 
@@ -118,6 +125,7 @@ def agregar_ruido_sal_pimienta(imagen, intensidad):
     Agrega ruido impulsivo sal y pimienta con un recorrido por posiciones.
     intensidad: proporción de pixeles afectados (0.0 a 1.0).
     """
+    print(f"[modelo] Agregando ruido sal y pimienta: {int(round(intensidad * 100))}%")
     resultado = imagen.copy()
     alto, ancho = resultado.shape[:2]
     total_pixeles = alto * ancho
@@ -195,17 +203,23 @@ def convolucionar_manual_grises(imagen, mascara):
 
 def filtro_media(imagen, tamano_mascara):
     """Filtro de media aplicado por canal cuando la imagen es RGB."""
+    # Este fue el suavizado mas directo de dejar andando.
+    print(f"[modelo] Aplicando filtro de media con mascara {tamano_mascara}x{tamano_mascara}...")
     mascara = crear_mascara_media(tamano_mascara)
     return aplicar_por_canal(imagen, lambda canal: convolucionar_manual_grises(canal, mascara))
 
 
 def filtro_mediana(imagen, tamano_mascara):
     """Filtro de mediana aplicado por canal."""
+    # Aqui se siente bonito ver como limpia el sal y pimienta.
+    print(f"[modelo] Aplicando filtro de mediana con mascara {tamano_mascara}x{tamano_mascara}...")
     return aplicar_por_canal(imagen, lambda canal: filtro_mediana_grises(canal, tamano_mascara))
 
 
 def filtro_moda(imagen, tamano_mascara):
     """Filtro de moda aplicado por canal."""
+    # La moda quedo buena para respetar lo binario.
+    print(f"[modelo] Aplicando filtro de moda con mascara {tamano_mascara}x{tamano_mascara}...")
     return aplicar_por_canal(imagen, lambda canal: filtro_moda_grises(canal, tamano_mascara))
 
 
@@ -374,11 +388,14 @@ def fourier_filtrar_canal(imagen, d0):
 
 def filtro_frecuencia_gaussiano(imagen, d0):
     """Aplica el filtro de frecuencia a una imagen en gris o RGB."""
+    # Esta parte costo, pero ya quedo clara: FFT + gaussiana + regreso.
+    print(f"[modelo] Aplicando filtro gaussiano en frecuencia con D0={d0}...")
     return aplicar_por_canal(imagen, lambda canal: fourier_filtrar_canal(canal, d0))
 
 
 def diagnostico_frecuencia(imagen, d0):
     """Genera imágenes de apoyo para la pestaña de frecuencia."""
+    print("[modelo] Armando diagnostico de frecuencia...")
     if imagen.ndim == 3:
         base = convertir_a_grises(imagen)
     else:
@@ -395,7 +412,34 @@ def diagnostico_frecuencia(imagen, d0):
 
 
 def diferencia_absoluta_manual(imagen_a, imagen_b):
-    """Calcula la diferencia absoluta pixel a pixel entre dos imágenes."""
+    """
+    Genera el "mapa de cambio" entre dos imágenes del mismo tamaño.
+
+    Idea del mapa:
+    - Se toma una imagen de referencia y otra imagen resultado.
+    - En este proyecto normalmente se compara:
+      imagen con ruido vs imagen filtrada.
+    - Para cada píxel se calcula la diferencia absoluta:
+      |pixel_original - pixel_resultado|
+
+    Cómo se interpreta:
+    - Valor pequeño  -> el filtro casi no modificó ese píxel.
+    - Valor grande   -> el filtro sí alteró notablemente ese píxel.
+    - Zonas oscuras  -> pocos cambios.
+    - Zonas claras   -> cambios fuertes.
+
+    Para qué sirve en la práctica:
+    - Visualizar dónde actuó más el filtro espacial.
+    - Comparar qué tan agresivos son media, mediana y moda.
+    - Ver si el filtrado realmente corrigió regiones con ruido
+      sal y pimienta o si también afectó zonas que estaban bien.
+
+    Nota:
+    Este mapa no es una imagen "mejorada" final, sino una imagen
+    de diagnostico. Su objetivo es explicar el efecto del filtro,
+    no reemplazar el resultado filtrado.
+    """
+    print("[modelo] Calculando mapa de cambio...")
     if imagen_a.shape != imagen_b.shape:
         raise ValueError("Las imágenes deben tener el mismo tamaño para calcular la diferencia.")
 
