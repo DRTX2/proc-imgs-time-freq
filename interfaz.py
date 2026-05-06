@@ -492,7 +492,7 @@ class VentanaPrincipal(QMainWindow):
             [
                 {"tipo": "imagen", "clave": "original", "titulo": "Imagen original RGB"},
                 {"tipo": "imagen", "clave": "gris", "titulo": "Escala de grises"},
-                {"tipo": "imagen", "clave": "normalizada", "titulo": "Imagen normalizada"},
+                {"tipo": "imagen", "clave": "normalizada", "titulo": "Imagen normalizada(min-max)"},
                 {"tipo": "imagen", "clave": "binaria", "titulo": "Imagen binarizada"},
             ],
             2,
@@ -814,7 +814,7 @@ class VentanaPrincipal(QMainWindow):
         self.canvas_frecuencia.actualizar(resultado)
 
         self.lbl_estado.setText(
-            f"Listo. Espacial: {filtro} con mascara {mascara}x{mascara}. Frecuencia: gaussiano pasa bajas con D0={resultado['d0']} px."
+            f"Proceso Completado. Espacial: {filtro} con mascara {mascara}x{mascara}. Frecuencia: gaussiano pasa bajas con D0={resultado['d0']} px."
         )
 
         self.btn_procesar.setEnabled(True)
