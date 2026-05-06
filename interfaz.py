@@ -500,7 +500,7 @@ class VentanaPrincipal(QMainWindow):
             [
                 {"tipo": "imagen", "clave": "original", "titulo": "Imagen original RGB"},
                 {"tipo": "imagen", "clave": "gris", "titulo": "Escala de grises"},
-                {"tipo": "imagen", "clave": "normalizada", "titulo": "Imagen normalizada(min-max)"},
+                {"tipo": "imagen", "clave": "normalizada", "titulo": "Imagen ecualizada"},
                 {"tipo": "imagen", "clave": "binaria", "titulo": "Imagen binarizada"},
             ],
             2,
