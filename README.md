@@ -4,13 +4,13 @@ Aplicacion de escritorio en Python para comparar procesamiento en dominio espaci
 
 ## Flujo
 
-- Carga de imagen RGB
-- Conversion manual a escala de grises
-- Ecualizacion manual de histograma
-- Binarizacion por umbral
-- Ruido sal y pimienta
-- Filtros espaciales: media, mediana y moda
-- Filtro gaussiano pasa bajas en frecuencia
+1. Carga de imagen RGB
+2. Conversion manual a escala de grises
+3. Normalizacion (ecualizacion) manual de histograma
+4. Ruido sal y pimienta (manual, sin imnoise)
+5. Filtros espaciales (dominio temporal): media, mediana y moda
+6. Filtros de gradiente / pasa altos: Roberts, Prewitt, Sobel, Laplaciano
+7. Filtro gaussiano pasa bajas en dominio de frecuencia (FFT + mascara gaussiana manual)
 
 ## Librerias
 

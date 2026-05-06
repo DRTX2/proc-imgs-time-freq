@@ -179,16 +179,25 @@ QPushButton#DangerButton:hover {
     background: #AA4242;
 }
 QComboBox {
-    background: #F1F5F9;
-    color: #223142;
-    border: 1px solid #D2DCE6;
+    background: #243648;
+    color: #F0F5FA;
+    border: 2px solid #4A7FA5;
     border-radius: 10px;
     min-height: 20px;
     padding: 8px 10px;
+    font-weight: 700;
 }
 QComboBox::drop-down {
     color: white;
     border: none;
+}
+QComboBox QAbstractItemView {
+    background: #1D2B38;
+    color: #F0F5FA;
+    selection-background-color: #357ABD;
+    selection-color: white;
+    border: 1px solid #4A7FA5;
+    outline: none;
 }
 """
 
@@ -204,58 +213,70 @@ class WorkerProcesoCompleto(QThread):
     def run(self):
         try:
             print("[pipeline] Iniciando procesamiento completo...")
-            img_rgb = self.args["img_rgb"]
-            ruido = self.args["ruido"]
+            img_rgb   = self.args["img_rgb"]
+            ruido     = self.args["ruido"]
             tam_mascara = self.args["mascara"]
-            d0 = self.args["d0"]
+            d0        = self.args["d0"]
             tipo_filtro = self.args["tipo_filtro"]
-            umbral = self.args["umbral"]
 
+            # 1. Grises
             img_gris = modelo.convertir_a_grises(img_rgb)
             hist_gris = modelo.calcular_histograma_grises(img_gris)
             print("[pipeline] Grises listos.")
 
+            # 2. Normalizacion de histograma
             img_normalizada = modelo.normalizar_histograma_grises(img_gris)
             hist_normalizada = modelo.calcular_histograma_grises(img_normalizada)
             print("[pipeline] Normalizacion lista.")
 
-            img_binaria = modelo.binarizar_imagen(img_normalizada, umbral)
-            img_ruido = modelo.agregar_ruido_sal_pimienta(img_binaria, ruido)
-            print("[pipeline] Binarizado y ruido listos.")
+            # 3. Ruido sal y pimienta sobre la imagen normalizada
+            img_ruido = modelo.agregar_ruido_sal_pimienta(img_normalizada, ruido)
+            print("[pipeline] Ruido listo.")
 
+            # 4. Filtros espaciales (media / mediana / moda) sobre imagen con ruido
             if tipo_filtro == "Media":
                 resultado_espacial = modelo.filtro_media(img_ruido, tam_mascara)
             elif tipo_filtro == "Mediana":
                 resultado_espacial = modelo.filtro_mediana(img_ruido, tam_mascara)
             else:
                 resultado_espacial = modelo.filtro_moda(img_ruido, tam_mascara)
+            mapa_cambio = modelo.diferencia_absoluta_manual(img_ruido, resultado_espacial)
             print(f"[pipeline] Filtro espacial listo: {tipo_filtro}.")
 
+            # 5. Filtros de gradiente / pasa altos sobre imagen con ruido
+            grad_roberts   = modelo.filtro_roberts(img_ruido)
+            grad_prewitt   = modelo.filtro_prewitt(img_ruido)
+            grad_sobel     = modelo.filtro_sobel(img_ruido)
+            grad_laplaciano = modelo.filtro_laplaciano(img_ruido)
+            print("[pipeline] Filtros de gradiente listos.")
+
+            # 6. Filtro gaussiano pasa bajas en frecuencia sobre imagen con ruido
             resultado_frecuencia = modelo.filtro_frecuencia_gaussiano(img_ruido, d0)
             diagnostico_frecuencia = modelo.diagnostico_frecuencia(img_ruido, d0)
-            mapa_cambio = modelo.diferencia_absoluta_manual(img_ruido, resultado_espacial)
-            print("[pipeline] Frecuencia y mapa de cambio listos.")
+            print("[pipeline] Frecuencia lista.")
 
             self.terminado.emit(
                 {
-                    "original": img_rgb,
-                    "gris": img_gris,
-                    "hist_gris": hist_gris,
-                    "normalizada": img_normalizada,
-                    "hist_normalizada": hist_normalizada,
-                    "binaria": img_binaria,
-                    "ruido": img_ruido,
-                    "espacial": resultado_espacial,
-                    "frecuencia": resultado_frecuencia,
-                    "mapa_cambio": mapa_cambio,
+                    "original":          img_rgb,
+                    "gris":              img_gris,
+                    "hist_gris":         hist_gris,
+                    "normalizada":       img_normalizada,
+                    "hist_normalizada":  hist_normalizada,
+                    "ruido":             img_ruido,
+                    "espacial":          resultado_espacial,
+                    "mapa_cambio":       mapa_cambio,
+                    "grad_roberts":      grad_roberts,
+                    "grad_prewitt":      grad_prewitt,
+                    "grad_sobel":        grad_sobel,
+                    "grad_laplaciano":   grad_laplaciano,
+                    "frecuencia":        resultado_frecuencia,
                     "espectro_original": diagnostico_frecuencia["espectro_original"],
                     "mascara_frecuencia": diagnostico_frecuencia["mascara"],
                     "espectro_filtrado": diagnostico_frecuencia["espectro_filtrado"],
-                    "tipo_filtro": tipo_filtro,
-                    "mascara": tam_mascara,
-                    "d0": d0,
-                    "umbral": umbral,
-                    "ruido_porcentaje": int(round(ruido * 100)),
+                    "tipo_filtro":       tipo_filtro,
+                    "mascara":           tam_mascara,
+                    "d0":                d0,
+                    "ruido_porcentaje":  int(round(ruido * 100)),
                 }
             )
             print("[pipeline] Todo el proceso termino bien.")
@@ -392,11 +413,6 @@ class VentanaPrincipal(QMainWindow):
         sidebar_layout = QVBoxLayout(sidebar_content)
         sidebar_layout.setContentsMargins(24, 24, 24, 24)
         sidebar_layout.setSpacing(14)
-
-        sidebar_titulo = QLabel("Laboratorio de filtros")
-        sidebar_titulo.setObjectName("SidebarTitle")
-        sidebar_layout.addWidget(sidebar_titulo)
-        
         botones_layout = QHBoxLayout()
         botones_layout.setSpacing(10)
 
@@ -421,7 +437,6 @@ class VentanaPrincipal(QMainWindow):
         self.lbl_size.setObjectName("SidebarMuted")
         sidebar_layout.addWidget(self.lbl_size)
 
-        self._agregar_bloque_preprocesamiento(sidebar_layout)
         self._agregar_bloque_ruido(sidebar_layout)
         self._agregar_bloque_filtro_espacial(sidebar_layout)
         self._agregar_bloque_filtro_frecuencia(sidebar_layout)
@@ -475,6 +490,7 @@ class VentanaPrincipal(QMainWindow):
         self.tabs.addTab(self._crear_tab_preprocesamiento(), "Preprocesamiento")
         self.tabs.addTab(self._crear_tab_espacial(), "Dominio espacial")
         self.tabs.addTab(self._crear_tab_frecuencia(), "Dominio de frecuencia")
+        self.tabs.addTab(self._crear_tab_gradiente(), "Filtros de borde")
 
         canvas_layout.addWidget(self.tabs)
         contenido_layout.addWidget(canvas_panel, 1)
@@ -490,7 +506,7 @@ class VentanaPrincipal(QMainWindow):
         layout.setSpacing(10)
 
         descripcion = QLabel(
-            "Secuencia base: imagen RGB, escala de grises, ecualizacion y binarizacion final."
+            "Flujo base: imagen RGB → escala de grises → normalizacion de histograma."
         )
         descripcion.setObjectName("Muted")
         descripcion.setWordWrap(True)
@@ -498,10 +514,10 @@ class VentanaPrincipal(QMainWindow):
 
         self.canvas_preprocesamiento = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "original", "titulo": "Imagen original RGB"},
-                {"tipo": "imagen", "clave": "gris", "titulo": "Escala de grises"},
-                {"tipo": "imagen", "clave": "normalizada", "titulo": "Imagen normalizada(min-max)"},
-                {"tipo": "imagen", "clave": "binaria", "titulo": "Imagen binarizada"},
+                {"tipo": "imagen", "clave": "original",    "titulo": "Imagen original RGB"},
+                {"tipo": "imagen", "clave": "gris",        "titulo": "Escala de grises"},
+                {"tipo": "imagen", "clave": "normalizada", "titulo": "Histograma normalizado"},
+                {"tipo": "imagen", "clave": "ruido",       "titulo": "Con ruido sal y pimienta"},
             ],
             2,
             2,
@@ -517,7 +533,7 @@ class VentanaPrincipal(QMainWindow):
         layout.setSpacing(10)
 
         descripcion = QLabel(
-            "Se aplica ruido sal y pimienta sobre la binaria y luego un filtro espacial seleccionado entre media, mediana o moda usando una mascara impar."
+            "Filtros espaciales (media, mediana, moda) aplicados sobre la imagen con ruido."
         )
         descripcion.setObjectName("Muted")
         descripcion.setWordWrap(True)
@@ -525,16 +541,43 @@ class VentanaPrincipal(QMainWindow):
 
         self.canvas_espacial = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "binaria", "titulo": "Base binarizada"},
-                {"tipo": "imagen", "clave": "ruido", "titulo": "Ruido sal y pimienta"},
-                {"tipo": "imagen", "clave": "espacial", "titulo": "Resultado espacial"},
-                {"tipo": "imagen", "clave": "mapa_cambio", "titulo": "Mapa de cambio"},
+                {"tipo": "imagen", "clave": "normalizada",  "titulo": "Imagen normalizada"},
+                {"tipo": "imagen", "clave": "ruido",        "titulo": "Con ruido sal y pimienta"},
+                {"tipo": "imagen", "clave": "espacial",     "titulo": "Resultado espacial"},
+                {"tipo": "imagen", "clave": "mapa_cambio",  "titulo": "Mapa de cambio"},
             ],
             2,
             2,
             self,
         )
         layout.addWidget(self.canvas_espacial)
+        return tab
+
+    def _crear_tab_gradiente(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+        descripcion = QLabel(
+            "Filtros acentuados (sharpening) aplicados sobre la imagen con ruido: original + gradiente (Roberts, Prewitt, Sobel) y original + Laplaciano."
+        )
+        descripcion.setObjectName("Muted")
+        descripcion.setWordWrap(True)
+        layout.addWidget(descripcion)
+
+        self.canvas_gradiente = CanvasResultados(
+            [
+                {"tipo": "imagen", "clave": "ruido",          "titulo": "Entrada con ruido"},
+                {"tipo": "imagen", "clave": "grad_roberts",   "titulo": "Roberts"},
+                {"tipo": "imagen", "clave": "grad_prewitt",   "titulo": "Prewitt"},
+                {"tipo": "imagen", "clave": "grad_sobel",     "titulo": "Sobel"},
+                {"tipo": "imagen", "clave": "grad_laplaciano","titulo": "Laplaciano"},
+            ],
+            2,
+            3,
+            self,
+        )
+        layout.addWidget(self.canvas_gradiente)
         return tab
 
     def _crear_tab_frecuencia(self):
@@ -552,12 +595,12 @@ class VentanaPrincipal(QMainWindow):
 
         self.canvas_frecuencia = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "binaria", "titulo": "Base binarizada"},
-                {"tipo": "imagen", "clave": "ruido", "titulo": "Entrada con ruido"},
+                {"tipo": "imagen", "clave": "normalizada",       "titulo": "Imagen normalizada"},
+                {"tipo": "imagen", "clave": "ruido",             "titulo": "Entrada con ruido"},
                 {"tipo": "imagen", "clave": "espectro_original", "titulo": "Espectro FFT"},
-                {"tipo": "imagen", "clave": "mascara_frecuencia", "titulo": "Mascara gaussiana"},
+                {"tipo": "imagen", "clave": "mascara_frecuencia","titulo": "Mascara gaussiana"},
                 {"tipo": "imagen", "clave": "espectro_filtrado", "titulo": "Espectro filtrado"},
-                {"tipo": "imagen", "clave": "frecuencia", "titulo": "Imagen reconstruida"},
+                {"tipo": "imagen", "clave": "frecuencia",        "titulo": "Imagen reconstruida"},
             ],
             2,
             3,
@@ -585,24 +628,6 @@ class VentanaPrincipal(QMainWindow):
             layout.addWidget(lbl_ayuda)
 
         return tarjeta, layout
-
-    def _agregar_bloque_preprocesamiento(self, layout_principal):
-        tarjeta, bloque = self._crear_tarjeta_control(
-            "Preprocesamiento"
-        )
-
-        self.lbl_umbral = QLabel("Umbral 127")
-        self.lbl_umbral.setObjectName("ValueBadge")
-        bloque.addWidget(self.lbl_umbral, alignment=Qt.AlignLeft)
-
-        self.sl_umbral = QSlider(Qt.Horizontal)
-        self.sl_umbral.setRange(0, 255)
-        self.sl_umbral.setValue(127)
-        self.sl_umbral.setStyleSheet(estilo_slider("#E56B4A"))
-        self.sl_umbral.valueChanged.connect(self._actualizar_lbl_umbral)
-        bloque.addWidget(self.sl_umbral)
-
-        layout_principal.addWidget(tarjeta)
 
     def _agregar_bloque_ruido(self, layout_principal):
         tarjeta, bloque = self._crear_tarjeta_control(
@@ -662,9 +687,6 @@ class VentanaPrincipal(QMainWindow):
 
         layout_principal.addWidget(tarjeta)
 
-    def _actualizar_lbl_umbral(self, valor):
-        self.lbl_umbral.setText(f"Umbral {valor}")
-
     def _actualizar_lbl_ruido(self, valor):
         self.lbl_ruido.setText(f"{valor} %")
 
@@ -717,6 +739,7 @@ class VentanaPrincipal(QMainWindow):
     def _mostrar_placeholders(self):
         self.canvas_preprocesamiento.actualizar()
         self.canvas_espacial.actualizar()
+        self.canvas_gradiente.actualizar()
         self.canvas_frecuencia.actualizar()
 
     def _cargar_imagen(self):
@@ -748,9 +771,9 @@ class VentanaPrincipal(QMainWindow):
 
             self.btn_procesar.setEnabled(True)
             self.lbl_estado.setText("Imagen lista. Ajusta parametros y pulsa Procesar todo.")
-
             self.canvas_preprocesamiento.actualizar({"original": self.img_rgb})
             self.canvas_espacial.actualizar()
+            self.canvas_gradiente.actualizar()
             self.canvas_frecuencia.actualizar()
         except Exception as exc:
             self.lbl_estado.setText(f"Error al cargar la imagen: {exc}")
@@ -765,7 +788,6 @@ class VentanaPrincipal(QMainWindow):
         self.lbl_size.setText("")
         self.lbl_estado.setText("Carga una imagen para empezar.")
 
-        self.sl_umbral.setValue(127)
         self.sl_ruido.setValue(5)
         self.sl_mascara.setValue(3)
         self.sl_d0.setValue(45)
@@ -783,14 +805,12 @@ class VentanaPrincipal(QMainWindow):
         self.btn_cargar.setEnabled(False)
         self.btn_limpiar.setEnabled(False)
         self.lbl_estado.setText("Procesando preprocesamiento, dominio espacial y frecuencia...")
-
         args = {
-            "img_rgb": self.img_rgb.copy(),
-            "ruido": self.sl_ruido.value() / 100.0,
-            "mascara": self._kernel_actual(),
-            "d0": self.sl_d0.value(),
-            "tipo_filtro": self.combo_filtro.currentText(),
-            "umbral": self.sl_umbral.value(),
+            "img_rgb":    self.img_rgb.copy(),
+            "ruido":      self.sl_ruido.value() / 100.0,
+            "mascara":    self._kernel_actual(),
+            "d0":         self.sl_d0.value(),
+            "tipo_filtro":self.combo_filtro.currentText(),
         }
 
         self.worker = WorkerProcesoCompleto(args)
@@ -799,15 +819,15 @@ class VentanaPrincipal(QMainWindow):
         self.worker.start()
 
     def _on_proceso_listo(self, resultado):
-        # Esta es la parte bonita: ya se ve todo el recorrido completo.
         print("[ui] Actualizando paneles con los resultados...")
         self.canvas_preprocesamiento.actualizar(resultado)
 
         filtro = resultado["tipo_filtro"]
         mascara = resultado["mascara"]
+
         self.canvas_espacial.actualizar_titulos(
             [
-                "Base binarizada",
+                "Imagen normalizada",
                 f"Ruido sal y pimienta ({resultado['ruido_porcentaje']} %)",
                 f"Resultado {filtro} ({mascara}x{mascara})",
                 "Mapa de cambio",
@@ -815,9 +835,20 @@ class VentanaPrincipal(QMainWindow):
         )
         self.canvas_espacial.actualizar(resultado)
 
+        self.canvas_gradiente.actualizar_titulos(
+            [
+                f"Entrada con ruido ({resultado['ruido_porcentaje']} %)",
+                "Roberts",
+                "Prewitt",
+                "Sobel",
+                f"Laplaciano",
+            ]
+        )
+        self.canvas_gradiente.actualizar(resultado)
+
         self.canvas_frecuencia.actualizar_titulos(
             [
-                "Base binarizada",
+                "Imagen normalizada",
                 f"Entrada con ruido ({resultado['ruido_porcentaje']} %)",
                 "Espectro FFT",
                 f"Mascara gaussiana (D0={resultado['d0']})",
@@ -828,9 +859,8 @@ class VentanaPrincipal(QMainWindow):
         self.canvas_frecuencia.actualizar(resultado)
 
         self.lbl_estado.setText(
-            f"Proceso Completado. Espacial: {filtro} con mascara {mascara}x{mascara}. Frecuencia: gaussiano pasa bajas con D0={resultado['d0']} px."
+            f"Completado. Espacial: {filtro} {mascara}x{mascara} | Bordes: Roberts/Prewitt/Sobel/Laplaciano | Frecuencia: D0={resultado['d0']} px."
         )
-
         self.btn_procesar.setEnabled(True)
         self.btn_cargar.setEnabled(True)
         self.btn_limpiar.setEnabled(True)

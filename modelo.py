@@ -341,7 +341,13 @@ def aplicar_filtro_frecuencia(espectro, filtro):
 
 def espectro_log(espectro_complejo):
     """Convierte un espectro complejo a magnitud logarítmica para visualización."""
-    magnitud = np.log1p(np.abs(espectro_complejo))
+    alto, ancho = espectro_complejo.shape
+    magnitud = np.zeros((alto, ancho), dtype=np.float64)
+    for fila in range(alto):
+        for columna in range(ancho):
+            v = espectro_complejo[fila, columna]
+            mod = math.sqrt(v.real ** 2 + v.imag ** 2)
+            magnitud[fila, columna] = math.log1p(mod)
     return normalizar_matriz_uint8(magnitud)
 
 
@@ -463,4 +469,179 @@ def diferencia_absoluta_manual(imagen_a, imagen_b):
                 if diferencia < 0:
                     diferencia = -diferencia
                 resultado[fila, columna, canal] = diferencia
+    return resultado
+
+
+# ---------------------------------------------------------------------------
+# Filtros de gradiente / pasa altos  (implementacion manual pixel a pixel)
+# ---------------------------------------------------------------------------
+
+def filtro_roberts(imagen):
+    """
+    Filtro acentuado Roberts (sharpening).
+    Kernels cruzados 2x2:
+        Gx = [[1, 0],    Gy = [[0,  1],
+              [0,-1]]          [-1,  0]]
+    Magnitud G = sqrt(Gx^2 + Gy^2)
+    Salida = original + G  (recortado a [0, 255])
+    """
+    print("[modelo] Aplicando filtro Roberts (acentuado)...")
+    if imagen.ndim == 3:
+        imagen = convertir_a_grises(imagen)
+
+    alto, ancho = imagen.shape
+    resultado = np.zeros((alto, ancho), dtype=np.uint8)
+
+    for fila in range(alto - 1):
+        for columna in range(ancho - 1):
+            gx = int(imagen[fila, columna]) - int(imagen[fila + 1, columna + 1])
+            gy = int(imagen[fila, columna + 1]) - int(imagen[fila + 1, columna])
+            gradiente = math.sqrt(gx * gx + gy * gy)
+            valor = int(imagen[fila, columna]) + int(gradiente)
+            if valor < 0:
+                valor = 0
+            elif valor > 255:
+                valor = 255
+            resultado[fila, columna] = valor
+        resultado[fila, ancho - 1] = imagen[fila, ancho - 1]
+
+    for columna in range(ancho):
+        resultado[alto - 1, columna] = imagen[alto - 1, columna]
+
+    return resultado
+
+
+def filtro_prewitt(imagen):
+    """
+    Filtro acentuado Prewitt (sharpening).
+    Kernels 3x3:
+        Gx = [[-1, 0, 1],    Gy = [[-1,-1,-1],
+              [-1, 0, 1],           [ 0, 0, 0],
+              [-1, 0, 1]]           [ 1, 1, 1]]
+    Magnitud G = sqrt(Gx^2 + Gy^2)
+    Salida = original + G  (recortado a [0, 255])
+    """
+    print("[modelo] Aplicando filtro Prewitt (acentuado)...")
+    if imagen.ndim == 3:
+        imagen = convertir_a_grises(imagen)
+
+    alto, ancho = imagen.shape
+    resultado = np.zeros((alto, ancho), dtype=np.uint8)
+
+    Gx = [[-1, 0, 1], [-1, 0, 1], [-1, 0, 1]]
+    Gy = [[-1, -1, -1], [0, 0, 0], [1, 1, 1]]
+
+    for fila in range(1, alto - 1):
+        for columna in range(1, ancho - 1):
+            suma_gx = 0.0
+            suma_gy = 0.0
+            for mf in range(3):
+                for mc in range(3):
+                    pixel = int(imagen[fila - 1 + mf, columna - 1 + mc])
+                    suma_gx += pixel * Gx[mf][mc]
+                    suma_gy += pixel * Gy[mf][mc]
+            gradiente = math.sqrt(suma_gx * suma_gx + suma_gy * suma_gy)
+            valor = int(imagen[fila, columna]) + int(gradiente)
+            if valor < 0:
+                valor = 0
+            elif valor > 255:
+                valor = 255
+            resultado[fila, columna] = valor
+
+    for fila in range(alto):
+        resultado[fila, 0] = imagen[fila, 0]
+        resultado[fila, ancho - 1] = imagen[fila, ancho - 1]
+    for columna in range(ancho):
+        resultado[0, columna] = imagen[0, columna]
+        resultado[alto - 1, columna] = imagen[alto - 1, columna]
+
+    return resultado
+
+
+def filtro_sobel(imagen):
+    """
+    Filtro acentuado Sobel (sharpening).
+    Kernels 3x3:
+        Gx = [[-1, 0, 1],    Gy = [[-1,-2,-1],
+              [-2, 0, 2],           [ 0, 0, 0],
+              [-1, 0, 1]]           [ 1, 2, 1]]
+    Magnitud G = sqrt(Gx^2 + Gy^2)
+    Salida = original + G  (recortado a [0, 255])
+    """
+    print("[modelo] Aplicando filtro Sobel (acentuado)...")
+    if imagen.ndim == 3:
+        imagen = convertir_a_grises(imagen)
+
+    alto, ancho = imagen.shape
+    resultado = np.zeros((alto, ancho), dtype=np.uint8)
+
+    Gx = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]
+    Gy = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]]
+
+    for fila in range(1, alto - 1):
+        for columna in range(1, ancho - 1):
+            suma_gx = 0.0
+            suma_gy = 0.0
+            for mf in range(3):
+                for mc in range(3):
+                    pixel = int(imagen[fila - 1 + mf, columna - 1 + mc])
+                    suma_gx += pixel * Gx[mf][mc]
+                    suma_gy += pixel * Gy[mf][mc]
+            gradiente = math.sqrt(suma_gx * suma_gx + suma_gy * suma_gy)
+            valor = int(imagen[fila, columna]) + int(gradiente)
+            if valor < 0:
+                valor = 0
+            elif valor > 255:
+                valor = 255
+            resultado[fila, columna] = valor
+
+    for fila in range(alto):
+        resultado[fila, 0] = imagen[fila, 0]
+        resultado[fila, ancho - 1] = imagen[fila, ancho - 1]
+    for columna in range(ancho):
+        resultado[0, columna] = imagen[0, columna]
+        resultado[alto - 1, columna] = imagen[alto - 1, columna]
+
+    return resultado
+
+
+def filtro_laplaciano(imagen):
+    """
+    Filtro acentuado Laplaciano (sharpening).
+    Kernel 3x3:
+        [[-1,-1,-1],
+         [-1, 8,-1],
+         [-1,-1,-1]]
+    Respuesta L puede ser negativa o positiva.
+    Salida = original + L  (recortado a [0, 255])
+    """
+    print("[modelo] Aplicando filtro Laplaciano (acentuado)...")
+    if imagen.ndim == 3:
+        imagen = convertir_a_grises(imagen)
+
+    alto, ancho = imagen.shape
+    kernel = [[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]]
+    resultado = np.zeros((alto, ancho), dtype=np.uint8)
+
+    for fila in range(1, alto - 1):
+        for columna in range(1, ancho - 1):
+            acumulador = 0.0
+            for mf in range(3):
+                for mc in range(3):
+                    pixel = int(imagen[fila - 1 + mf, columna - 1 + mc])
+                    acumulador += pixel * kernel[mf][mc]
+            valor = int(imagen[fila, columna]) + int(acumulador)
+            if valor < 0:
+                valor = 0
+            elif valor > 255:
+                valor = 255
+            resultado[fila, columna] = valor
+
+    for fila in range(alto):
+        resultado[fila, 0] = imagen[fila, 0]
+        resultado[fila, ancho - 1] = imagen[fila, ancho - 1]
+    for columna in range(ancho):
+        resultado[0, columna] = imagen[0, columna]
+        resultado[alto - 1, columna] = imagen[alto - 1, columna]
+
     return resultado
