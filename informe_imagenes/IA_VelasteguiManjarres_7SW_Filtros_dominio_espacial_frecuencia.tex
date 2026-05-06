@@ -79,7 +79,7 @@
 
 \textbf{Específicos:}
 \begin{itemize}
-    \item Construir una etapa de preprocesamiento que convierta la imagen a escala de grises, ecualice su histograma y genere una imagen binaria mediante umbral.
+    \item Construir una etapa de preprocesamiento que convierta la imagen a escala de grises, aplique normalización min-max y genere una imagen binaria mediante umbral.
     \item Evaluar filtros espaciales de media, mediana y moda sobre una imagen binaria alterada con ruido sal y pimienta.
     \item Analizar el filtrado en dominio de frecuencia mediante FFT, máscara gaussiana pasa bajas y reconstrucción de la imagen procesada.
 \end{itemize}
@@ -114,7 +114,7 @@
 
 \subsubsection*{Dependencias de Python utilizadas}
 \begin{itemize}
-    \item \textbf{OpenCV:} se emplea para leer la imagen desde disco y convertir la carga inicial de BGR a RGB. No se usa para binarizar, ecualizar ni filtrar.
+    \item \textbf{OpenCV:} se emplea para leer la imagen desde disco y convertir la carga inicial de BGR a RGB. No se usa para binarizar, normalizar ni filtrar.
     \item \textbf{NumPy:} se emplea para representar imágenes como matrices y para calcular la FFT en el dominio de frecuencia.
     \item \textbf{PySide6:} se usa para construir la interfaz gráfica, los botones, selectores, pestañas y controles deslizantes.
     \item \textbf{Matplotlib:} se usa para renderizar las imágenes y gráficos dentro de la interfaz.
@@ -153,7 +153,7 @@ En el dominio de frecuencia, la imagen se analiza mediante sus componentes espec
 
 Las técnicas tratadas en esta práctica tienen aplicaciones directas en problemas reales donde se necesita mejorar, limpiar o segmentar información visual. En imágenes médicas, por ejemplo, el realce de contraste y la reducción de ruido ayudan a distinguir estructuras anatómicas antes de una segmentación o diagnóstico asistido \cite{gonzalez}. En astronomía y teledetección, el filtrado y el análisis de frecuencias permiten resaltar estructuras extensas, reducir variaciones no deseadas y preparar imágenes para análisis posteriores \cite{pratt}. En documentos digitalizados o inspección industrial, la binarización y los filtros espaciales facilitan separar texto, defectos o regiones de interés del fondo \cite{jain}.
 
-En este proyecto esas aplicaciones se representan de forma controlada sobre una imagen de formación estelar W51. La imagen contiene zonas de alto brillo, regiones oscuras, detalles finos y textura; por eso es útil para observar cómo el preprocesamiento cambia la separación de intensidades, cómo el ruido sal y pimienta altera la imagen binaria y cómo los filtros espaciales y frecuenciales responden ante esa degradación.
+En este proyecto esas aplicaciones se representan de forma controlada sobre una imagen de formación estelar W51. La imagen contiene zonas de alto brillo, regiones oscuras, detalles finos y textura; por eso es útil para observar cómo el preprocesamiento ajusta el rango de intensidades, cómo el ruido sal y pimienta altera la imagen binaria y cómo los filtros espaciales y frecuenciales responden ante esa degradación.
 
 \subsubsection{Conversión a escala de grises}
 
@@ -164,20 +164,20 @@ El programa convierte la imagen RGB a escala de grises mediante la ponderación 
 \end{equation}
 Esta expresión asigna mayor peso al canal verde porque la percepción humana es más sensible a sus variaciones, y pesos menores a los canales rojo y azul \cite{gonzalez}. En el código esta operación se implementa con recorridos pixel a pixel, sin usar una función automática de OpenCV para convertir a grises.
 
-\subsubsection{Ecualización de histograma}
+\subsubsection{Normalización min-max}
 
-La ecualización de histograma busca redistribuir los niveles de intensidad de una imagen para mejorar su contraste global. Para ello se calcula el histograma, luego su distribución acumulada y finalmente se reasigna cada nivel de gris. El principio se basa en transformar la distribución original de intensidades en una distribución más extendida dentro del rango disponible \cite{jain}.
+La normalización min-max ajusta los niveles de intensidad de una imagen al rango completo disponible, sin redistribuir el histograma mediante una función acumulada. Este procedimiento toma el valor mínimo y el valor máximo presentes en la imagen en escala de grises, y reescala cada píxel proporcionalmente dentro del intervalo de 0 a 255. De esta forma, se aprovecha todo el rango dinámico antes de aplicar la binarización \cite{gonzalez,jain}.
 
-En la implementación del proyecto, el histograma de 256 posiciones se calcula mediante conteo manual. Luego se obtiene el acumulado y se aplica la transformación:
+En la implementación del proyecto, el mínimo y el máximo se calculan mediante recorridos manuales sobre la matriz de intensidades. Luego se aplica la transformación:
 \begin{equation}
-    s_k=\frac{CDF(k)-CDF_{min}}{MN-CDF_{min}}\times 255
-    \label{eq:ecualizacion}
+    I_{norm}(x,y)=\frac{I_{gris}(x,y)-I_{min}}{I_{max}-I_{min}}\times 255
+    \label{eq:minmax}
 \end{equation}
-donde $CDF(k)$ representa la frecuencia acumulada hasta el nivel $k$, $M$ y $N$ son las dimensiones de la imagen y $CDF_{min}$ evita que los niveles sin presencia afecten la normalización.
+donde $I_{min}$ e $I_{max}$ representan, respectivamente, el menor y el mayor valor de intensidad encontrados en la imagen. Si ambos valores son iguales, el programa conserva la imagen original para evitar una división por cero.
 
 \subsubsection{Binarización por umbral}
 
-La binarización reduce la imagen a dos valores: negro y blanco. Esta operación es útil cuando se desea separar regiones de interés del fondo. En el programa, la imagen ecualizada se transforma en binaria mediante un umbral ajustable:
+La binarización reduce la imagen a dos valores: negro y blanco. Esta operación es útil cuando se desea separar regiones de interés del fondo. En el programa, la imagen normalizada por min-max se transforma en binaria mediante un umbral ajustable:
 \begin{equation}
     I_{bin}(x,y)=
     \begin{cases}
@@ -213,7 +213,7 @@ Después de aplicar la máscara al espectro, se realiza la transformada inversa 
 
 \subsubsection{Descripción del programa}
 
-El programa se divide en dos archivos principales. El archivo \texttt{modelo.py} contiene el procesamiento numérico de la imagen: carga, conversión a grises, ecualización, binarización, ruido, filtros espaciales, filtrado en frecuencia y mapa de cambio. El archivo \texttt{interfaz.py} contiene la interfaz de usuario y administra el flujo de procesamiento mediante un hilo de trabajo para evitar que la ventana se bloquee mientras se ejecutan filtros costosos.
+El programa se divide en dos archivos principales. El archivo \texttt{modelo.py} contiene el procesamiento numérico de la imagen: carga, conversión a grises, normalización min-max, binarización, ruido, filtros espaciales, filtrado en frecuencia y mapa de cambio. El archivo \texttt{interfaz.py} contiene la interfaz de usuario y administra el flujo de procesamiento mediante un hilo de trabajo para evitar que la ventana se bloquee mientras se ejecutan filtros costosos.
 
 La primera parte del programa es común para todos los resultados. En esta etapa se obtiene una imagen binaria con ruido que funcionará como entrada compartida para la comparación posterior. Esta secuencia evita que cada filtro trabaje con una imagen distinta y permite analizar el efecto real de cada método.
 
@@ -226,13 +226,13 @@ La primera parte del programa es común para todos los resultados. En esta etapa
     ]
         \node[etapa] (rgb) {Imagen RGB};
         \node[etapa, right=of rgb] (gris) {Escala de grises};
-        \node[etapa, right=of gris] (ecu) {Histograma ecualizado};
-        \node[etapa, right=of ecu] (bin) {Binarización};
+        \node[etapa, right=of gris] (norm) {Normalización min-max};
+        \node[etapa, right=of norm] (bin) {Binarización};
         \node[etapa, right=of bin] (ruido) {Ruido sal y pimienta};
 
         \draw[flecha] (rgb) -- (gris);
-        \draw[flecha] (gris) -- (ecu);
-        \draw[flecha] (ecu) -- (bin);
+        \draw[flecha] (gris) -- (norm);
+        \draw[flecha] (norm) -- (bin);
         \draw[flecha] (bin) -- (ruido);
     \end{tikzpicture}
     \caption{Cadena común de preprocesamiento hasta obtener la imagen binaria con ruido.}
@@ -293,11 +293,15 @@ La interfaz expone cuatro grupos de control. El primero permite cargar y limpiar
     {\footnotesize Fuente: Elaboración propia.}
 \end{figure}
 
+Al iniciar el programa, los controles se cargan con valores base para permitir una primera ejecución sin configuración adicional: umbral de binarización en 127, ruido sal y pimienta en 5\%, filtro espacial en media, máscara espacial de $3 \times 3$ y $D_0=45$ píxeles. Estos valores provienen de la inicialización de los controles en \texttt{interfaz.py}. Después de cargar una imagen, el tamaño máximo de la máscara se ajusta según las dimensiones de la imagen para evitar máscaras excesivas, y el valor sugerido de $D_0$ se recalcula tomando como referencia la mitad de la dimensión menor de la imagen. Por ello, el valor inicial observado puede cambiar de forma automática después de seleccionar una imagen.
+
+El uso operativo de la interfaz sigue una secuencia simple: primero se carga la imagen, luego se ajustan el umbral, el ruido, el filtro espacial, el tamaño de máscara y el valor $D_0$. Finalmente, el usuario debe desplazarse hasta la parte inferior del panel lateral y pulsar el botón \textit{Procesar todo}. Esta acción ejecuta el flujo completo y actualiza las tres pestañas de resultados con la misma base binarizada.
+
 En la ejecución documentada se trabajó con un umbral de binarización de 136, ruido sal y pimienta de 30\%, filtro espacial de media con máscara $5 \times 5$ y filtro gaussiano en frecuencia con $D_0=80$. Con esta configuración se espera obtener una imagen binaria suficientemente contrastada, una versión degradada por ruido impulsivo y salidas filtradas que permitan observar la diferencia entre suavizado local por máscara y suavizado global por componentes de frecuencia.
 
 \subsubsection{Imagen de prueba}
 
-La imagen de prueba utilizada en la ejecución corresponde a una región de formación estelar W51. Presenta regiones con textura, zonas claras, zonas oscuras y detalles finos. Estas características permiten observar con mayor claridad el efecto de la ecualización, la binarización y los filtros posteriores.
+La imagen de prueba utilizada en la ejecución corresponde a una región de formación estelar W51. Presenta regiones con textura, zonas claras, zonas oscuras y detalles finos. Estas características permiten observar con mayor claridad el efecto de la normalización min-max, la binarización y los filtros posteriores.
 
 \begin{figure}[H]
     \centering
@@ -310,18 +314,18 @@ La imagen de prueba utilizada en la ejecución corresponde a una región de form
 
 \subsubsection{Pestaña de preprocesamiento}
 
-La primera vista presenta las etapas previas al filtrado. Se observa la imagen original RGB, su versión en escala de grises, la imagen ecualizada y la imagen binarizada. Esta vista confirma que el programa no aplica directamente los filtros sobre la imagen original, sino sobre una base preprocesada.
+La primera vista presenta las etapas previas al filtrado. Se observa la imagen original RGB, su versión en escala de grises, la imagen normalizada por min-max y la imagen binarizada. Esta vista confirma que el programa no aplica directamente los filtros sobre la imagen original, sino sobre una base preprocesada.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.94\textwidth]{img/preprocesamiento.png}
-    \caption{Pestaña de preprocesamiento. La interfaz muestra la imagen RGB, la conversión a grises, la ecualización del histograma y la binarización final.}
+    \caption{Pestaña de preprocesamiento. La interfaz muestra la imagen RGB, la conversión a grises, la normalización min-max y la binarización final.}
     \label{fig:preprocesamiento}
     \vspace{2pt}
     {\footnotesize Fuente: Elaboración propia.}
 \end{figure}
 
-La imagen ecualizada presenta mayor separación visual entre regiones claras y oscuras. Posteriormente, la binarización convierte esa información a una representación de dos niveles. Esta salida es útil para los filtros de mediana y moda, porque ambos pueden conservar o restaurar regiones dominantes de blanco y negro.
+La imagen normalizada por min-max estira el rango de intensidades disponible sin cambiar el orden relativo de los píxeles. Posteriormente, la binarización convierte esa información a una representación de dos niveles. Esta salida es útil para los filtros de mediana y moda, porque ambos pueden conservar o restaurar regiones dominantes de blanco y negro.
 
 \subsubsection{Pestaña de dominio espacial}
 
@@ -337,6 +341,8 @@ La segunda vista compara la base binarizada, la imagen con ruido, el resultado d
 \end{figure}
 
 El mapa de cambio no representa una imagen final mejorada. Su función es diagnóstica: muestra dónde el filtro modificó con mayor fuerza los valores de la imagen. Las zonas más claras indican diferencias más grandes entre la imagen con ruido y la imagen filtrada; las zonas oscuras indican cambios menores. Este recurso ayuda a interpretar la agresividad del filtro y a comparar media, mediana y moda con el mismo criterio.
+
+En la figura de dominio espacial, el mapa de cambio permite observar que las variaciones más notorias aparecen alrededor de puntos aislados de ruido y en bordes donde existen transiciones entre regiones blancas y negras. Esto es coherente con el filtro de media aplicado con máscara $5 \times 5$, ya que el promedio suaviza cambios bruscos y reemplaza píxeles extremos por valores intermedios. Las zonas oscuras del mapa indican áreas donde la estructura binaria se mantuvo relativamente estable; por tanto, el resultado muestra que el filtro actuó con mayor intensidad sobre el ruido impulsivo y sobre fronteras finas de la imagen W51, mientras conservó mejor las regiones amplias.
 
 \begin{figure}[H]
     \centering
@@ -409,7 +415,7 @@ Al compararlo con los filtros espaciales, el método en frecuencia actúa de for
 
 \subsubsection{Alcance de implementación manual}
 
-El programa usa librerías, pero no delega los filtros espaciales principales a funciones ya resueltas de OpenCV o NumPy. La conversión a grises, la ecualización, la binarización, la máscara de media, la mediana, la moda, la máscara gaussiana y la multiplicación del espectro se implementan mediante recorridos explícitos o cálculos propios dentro de \texttt{modelo.py}.
+El programa usa librerías, pero no delega los filtros espaciales principales a funciones ya resueltas de OpenCV o NumPy. La conversión a grises, la normalización min-max, la binarización, la máscara de media, la mediana, la moda, la máscara gaussiana y la multiplicación del espectro se implementan mediante recorridos explícitos o cálculos propios dentro de \texttt{modelo.py}.
 
 El uso de NumPy se justifica por dos motivos. Primero, permite almacenar la imagen como matriz, que es la representación natural del procesamiento digital. Segundo, permite usar la FFT para el dominio de frecuencia. Reimplementar la FFT completa excede el alcance de esta práctica porque se trata de un algoritmo matemático especializado y ampliamente validado \cite{cooley,harris}. Por ello, la práctica concentra el trabajo manual en las etapas estadísticas, espaciales y de construcción de máscaras.
 
@@ -425,7 +431,7 @@ $\square$ Resolución de conflictos
 
 \subsection{Conclusiones}
 
-La etapa de preprocesamiento permitió transformar una imagen RGB en una representación más adecuada para el análisis posterior. La conversión a escala de grises redujo la información de color a una sola matriz de intensidades, la ecualización del histograma mejoró la separación visual entre regiones claras y oscuras, y la binarización por umbral produjo una base de dos niveles sobre la cual se pudo trabajar de manera controlada. Con ello se comprobó que la calidad de las etapas iniciales condiciona directamente el comportamiento de los filtros posteriores.
+La etapa de preprocesamiento permitió transformar una imagen RGB en una representación más adecuada para el análisis posterior. La conversión a escala de grises redujo la información de color a una sola matriz de intensidades, la normalización min-max ajustó los valores al rango completo de 0 a 255 sin utilizar una redistribución acumulada, y la binarización por umbral produjo una base de dos niveles sobre la cual se pudo trabajar de manera controlada. Con ello se comprobó que la calidad de las etapas iniciales condiciona directamente el comportamiento de los filtros posteriores.
 
 La evaluación de los filtros espaciales sobre la imagen con ruido sal y pimienta mostró diferencias claras entre las estrategias locales implementadas. El filtro de media suavizó la imagen, pero generó valores intermedios de gris al promediar una entrada binaria; la mediana redujo mejor el ruido impulsivo porque seleccionó el valor central de la vecindad; y la moda mantuvo coherencia con la estructura binaria al conservar el valor más repetido. El mapa de cambio permitió evidenciar visualmente dónde cada filtro modificó con mayor intensidad la imagen.
 
@@ -433,7 +439,7 @@ El análisis en dominio de frecuencia permitió observar el mismo problema desde
 
 \subsection{Recomendaciones}
 
-Se recomienda ajustar el umbral de binarización observando la imagen ecualizada, ya que un valor demasiado bajo puede incluir regiones de fondo como zonas blancas y un valor demasiado alto puede eliminar estructuras relevantes. Para esta tarea, el preprocesamiento debe revisarse antes de aplicar ruido o filtros, porque una binarización deficiente arrastra errores hacia las etapas espacial y frecuencial.
+Se recomienda ajustar el umbral de binarización observando la imagen normalizada por min-max, ya que un valor demasiado bajo puede incluir regiones de fondo como zonas blancas y un valor demasiado alto puede eliminar estructuras relevantes. Para esta tarea, el preprocesamiento debe revisarse antes de aplicar ruido o filtros, porque una binarización deficiente arrastra errores hacia las etapas espacial y frecuencial.
 
 Se recomienda utilizar máscaras espaciales pequeñas o moderadas cuando se trabaje con imágenes de mayor resolución, debido a que los filtros fueron implementados con recorridos manuales y su tiempo de ejecución aumenta con el tamaño de la vecindad. Además, para ruido sal y pimienta conviene priorizar mediana o moda cuando se desea conservar una salida cercana a una imagen binaria.
 

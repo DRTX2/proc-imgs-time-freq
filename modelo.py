@@ -39,36 +39,30 @@ def convertir_a_grises(imagen_rgb):
     return gris
 
 
-def normalizar_histograma_grises(imagen_gris):
-    """Ecualiza el histograma de una imagen en grises con conteo manual."""
-    print("[modelo] Ecualizando histograma...")
+def normalizar_minmax_grises(imagen_gris):
+    """Normaliza una imagen en grises al rango 0-255 usando min-max manual."""
+    print("[modelo] Normalizando con min-max...")
     alto, ancho = imagen_gris.shape
-    histograma = [0] * 256
-
-    for fila in range(alto):
-        for columna in range(ancho):
-            histograma[int(imagen_gris[fila, columna])] += 1
-
-    acumulado = [0] * 256
-    acumulado[0] = histograma[0]
-    for indice in range(1, 256):
-        acumulado[indice] = acumulado[indice - 1] + histograma[indice]
-
-    cdf_min = 0
-    for valor in acumulado:
-        if valor > 0:
-            cdf_min = valor
-            break
-
-    total = alto * ancho
-    resultado = np.zeros((alto, ancho), dtype=np.uint8)
-    if total == cdf_min:
-        return imagen_gris.copy()
+    minimo = 255
+    maximo = 0
 
     for fila in range(alto):
         for columna in range(ancho):
             pixel = int(imagen_gris[fila, columna])
-            nuevo = round((acumulado[pixel] - cdf_min) * 255 / (total - cdf_min))
+            if pixel < minimo:
+                minimo = pixel
+            if pixel > maximo:
+                maximo = pixel
+
+    resultado = np.zeros((alto, ancho), dtype=np.uint8)
+    if maximo == minimo:
+        return imagen_gris.copy()
+
+    rango = maximo - minimo
+    for fila in range(alto):
+        for columna in range(ancho):
+            pixel = int(imagen_gris[fila, columna])
+            nuevo = round((pixel - minimo) * 255 / rango)
             if nuevo < 0:
                 nuevo = 0
             elif nuevo > 255:

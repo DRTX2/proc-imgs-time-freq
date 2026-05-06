@@ -6,7 +6,7 @@ Aplicacion de escritorio en Python para comparar procesamiento en dominio espaci
 
 - Carga de imagen RGB
 - Conversion manual a escala de grises
-- Ecualizacion manual de histograma
+- Normalizacion min-max manual
 - Binarizacion por umbral
 - Ruido sal y pimienta
 - Filtros espaciales: media, mediana y moda

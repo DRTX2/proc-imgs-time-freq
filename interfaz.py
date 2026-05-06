@@ -215,7 +215,7 @@ class WorkerProcesoCompleto(QThread):
             hist_gris = modelo.calcular_histograma_grises(img_gris)
             print("[pipeline] Grises listos.")
 
-            img_normalizada = modelo.normalizar_histograma_grises(img_gris)
+            img_normalizada = modelo.normalizar_minmax_grises(img_gris)
             hist_normalizada = modelo.calcular_histograma_grises(img_normalizada)
             print("[pipeline] Normalizacion lista.")
 
@@ -393,7 +393,7 @@ class VentanaPrincipal(QMainWindow):
         sidebar_layout.setContentsMargins(24, 24, 24, 24)
         sidebar_layout.setSpacing(14)
 
-        sidebar_titulo = QLabel("Laboratorio de filtros")
+        sidebar_titulo = QLabel("Filtros")
         sidebar_titulo.setObjectName("SidebarTitle")
         sidebar_layout.addWidget(sidebar_titulo)
         
@@ -490,7 +490,7 @@ class VentanaPrincipal(QMainWindow):
         layout.setSpacing(10)
 
         descripcion = QLabel(
-            "Secuencia base: imagen RGB, escala de grises, ecualizacion y binarizacion final."
+            "Secuencia base: imagen RGB, escala de grises, normalizacion min-max y binarizacion final."
         )
         descripcion.setObjectName("Muted")
         descripcion.setWordWrap(True)
@@ -500,7 +500,7 @@ class VentanaPrincipal(QMainWindow):
             [
                 {"tipo": "imagen", "clave": "original", "titulo": "Imagen original RGB"},
                 {"tipo": "imagen", "clave": "gris", "titulo": "Escala de grises"},
-                {"tipo": "imagen", "clave": "normalizada", "titulo": "Imagen ecualizada"},
+                {"tipo": "imagen", "clave": "normalizada", "titulo": "Imagen normalizada min-max"},
                 {"tipo": "imagen", "clave": "binaria", "titulo": "Imagen binarizada"},
             ],
             2,
