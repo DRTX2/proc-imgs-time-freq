@@ -5,6 +5,85 @@ import cv2
 import numpy as np
 
 
+class ModeloImagen:
+    """Agrupa las operaciones del modelo y mantiene compatibilidad con funciones libres."""
+
+    def cargar_imagen(self, ruta):
+        return cargar_imagen(ruta)
+
+    def convertir_a_grises(self, imagen_rgb):
+        return convertir_a_grises(imagen_rgb)
+
+    def normalizar_histograma_grises(self, imagen_gris):
+        return normalizar_histograma_grises(imagen_gris)
+
+    def calcular_histograma_grises(self, imagen_gris):
+        return calcular_histograma_grises(imagen_gris)
+
+    def calcular_tamano_mascara_maximo(self, imagen):
+        return calcular_tamano_mascara_maximo(imagen)
+
+    def agregar_ruido_sal_pimienta(self, imagen, intensidad):
+        return agregar_ruido_sal_pimienta(imagen, intensidad)
+
+    def filtro_media(self, imagen, tamano_mascara):
+        return filtro_media(imagen, tamano_mascara)
+
+    def filtro_mediana(self, imagen, tamano_mascara):
+        return filtro_mediana(imagen, tamano_mascara)
+
+    def filtro_moda(self, imagen, tamano_mascara):
+        return filtro_moda(imagen, tamano_mascara)
+
+    def filtro_frecuencia_gaussiano(self, imagen, d0):
+        return filtro_frecuencia_gaussiano(imagen, d0)
+
+    def diagnostico_frecuencia(self, imagen, d0):
+        return diagnostico_frecuencia(imagen, d0)
+
+    def diferencia_absoluta_manual(self, imagen_a, imagen_b):
+        return diferencia_absoluta_manual(imagen_a, imagen_b)
+
+    def filtro_roberts(self, imagen):
+        return filtro_roberts(imagen)
+
+    def filtro_prewitt(self, imagen):
+        return filtro_prewitt(imagen)
+
+    def filtro_sobel(self, imagen):
+        return filtro_sobel(imagen)
+
+    def filtro_laplaciano(self, imagen):
+        return filtro_laplaciano(imagen)
+
+    def gradientes_bordes(self, imagen):
+        return gradientes_bordes(imagen)
+
+    def diagnostico_gradiente(self, imagen, operador):
+        return diagnostico_gradiente(imagen, operador)
+
+    def diagnostico_pasaaltas(self, imagen, d0):
+        return diagnostico_pasaaltas(imagen, d0)
+
+    def binarizar_imagen(self, imagen_gris, umbral):
+        return binarizar_imagen(imagen_gris, umbral)
+
+    def etiquetar_regiones_bfs(self, imagen_binaria, min_area=50, max_area=None):
+        return etiquetar_regiones_bfs(imagen_binaria, min_area, max_area)
+
+    def dibujar_bounding_boxes(self, imagen_binaria, regiones):
+        return dibujar_bounding_boxes(imagen_binaria, regiones)
+
+    def dibujar_bounding_boxes_sobre_imagen(self, imagen_base, regiones):
+        return dibujar_bounding_boxes_sobre_imagen(imagen_base, regiones)
+
+    def componer_tira_recortes(self, imagen, regiones, tamano=64, separacion=4):
+        return componer_tira_recortes(imagen, regiones, tamano, separacion)
+
+
+modelo_imagen = ModeloImagen()
+
+
 def cargar_imagen(ruta):
     """Carga una imagen RGB desde disco."""
     print(f"[modelo] Cargando imagen: {ruta}")
@@ -717,6 +796,125 @@ def gradientes_bordes(imagen):
     }
 
 
+def diagnostico_gradiente(imagen, operador):
+    """Devuelve componentes visuales del operador seleccionado."""
+    print(f"[modelo] Armando diagnostico de gradiente: {operador}...")
+    if imagen.ndim == 3:
+        base = convertir_a_grises(imagen)
+    else:
+        base = imagen
+
+    if operador == "Roberts":
+        gx, gy, magnitud = _componentes_roberts(base)
+        return {
+            "titulos": ["Gx (vertical)", "Gy (horizontal)", "Magnitud (G)"],
+            "imagenes": [gx, gy, magnitud],
+        }
+    if operador == "Prewitt":
+        gx, gy, magnitud = _componentes_prewitt(base)
+        return {
+            "titulos": ["Gx (vertical)", "Gy (horizontal)", "Magnitud (G)"],
+            "imagenes": [gx, gy, magnitud],
+        }
+    if operador == "Sobel":
+        gx, gy, magnitud = _componentes_sobel(base)
+        return {
+            "titulos": ["Gx (vertical)", "Gy (horizontal)", "Magnitud (G)"],
+            "imagenes": [gx, gy, magnitud],
+        }
+
+    respuesta, respuesta_abs, normalizada = _componentes_laplaciano(base)
+    return {
+        "titulos": ["Respuesta L", "|L|", "Normalizada"],
+        "imagenes": [respuesta, respuesta_abs, normalizada],
+    }
+
+
+def _componentes_roberts(imagen):
+    alto, ancho = imagen.shape
+    gx = np.zeros((alto, ancho), dtype=np.float64)
+    gy = np.zeros((alto, ancho), dtype=np.float64)
+    magnitud = np.zeros((alto, ancho), dtype=np.uint8)
+
+    for fila in range(alto - 1):
+        for columna in range(ancho - 1):
+            valor_gx = int(imagen[fila, columna]) - int(imagen[fila + 1, columna + 1])
+            valor_gy = int(imagen[fila, columna + 1]) - int(imagen[fila + 1, columna])
+            gx[fila, columna] = valor_gx
+            gy[fila, columna] = valor_gy
+            magnitud[fila, columna] = min(int(math.sqrt(valor_gx * valor_gx + valor_gy * valor_gy)), 255)
+
+    return normalizar_matriz_uint8(np.abs(gx)), normalizar_matriz_uint8(np.abs(gy)), magnitud
+
+
+def _componentes_prewitt(imagen):
+    alto, ancho = imagen.shape
+    gx = np.zeros((alto, ancho), dtype=np.float64)
+    gy = np.zeros((alto, ancho), dtype=np.float64)
+    magnitud = np.zeros((alto, ancho), dtype=np.uint8)
+    kernel_x = [[-1, 0, 1], [-1, 0, 1], [-1, 0, 1]]
+    kernel_y = [[-1, -1, -1], [0, 0, 0], [1, 1, 1]]
+
+    for fila in range(1, alto - 1):
+        for columna in range(1, ancho - 1):
+            suma_gx = 0.0
+            suma_gy = 0.0
+            for mf in range(3):
+                for mc in range(3):
+                    pixel = int(imagen[fila - 1 + mf, columna - 1 + mc])
+                    suma_gx += pixel * kernel_x[mf][mc]
+                    suma_gy += pixel * kernel_y[mf][mc]
+            gx[fila, columna] = suma_gx
+            gy[fila, columna] = suma_gy
+            magnitud[fila, columna] = min(int(math.sqrt(suma_gx * suma_gx + suma_gy * suma_gy)), 255)
+
+    return normalizar_matriz_uint8(np.abs(gx)), normalizar_matriz_uint8(np.abs(gy)), magnitud
+
+
+def _componentes_sobel(imagen):
+    alto, ancho = imagen.shape
+    gx = np.zeros((alto, ancho), dtype=np.float64)
+    gy = np.zeros((alto, ancho), dtype=np.float64)
+    magnitud = np.zeros((alto, ancho), dtype=np.uint8)
+    kernel_x = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]
+    kernel_y = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]]
+
+    for fila in range(1, alto - 1):
+        for columna in range(1, ancho - 1):
+            suma_gx = 0.0
+            suma_gy = 0.0
+            for mf in range(3):
+                for mc in range(3):
+                    pixel = int(imagen[fila - 1 + mf, columna - 1 + mc])
+                    suma_gx += pixel * kernel_x[mf][mc]
+                    suma_gy += pixel * kernel_y[mf][mc]
+            gx[fila, columna] = suma_gx
+            gy[fila, columna] = suma_gy
+            magnitud[fila, columna] = min(int(math.sqrt(suma_gx * suma_gx + suma_gy * suma_gy)), 255)
+
+    return normalizar_matriz_uint8(np.abs(gx)), normalizar_matriz_uint8(np.abs(gy)), magnitud
+
+
+def _componentes_laplaciano(imagen):
+    alto, ancho = imagen.shape
+    kernel = [[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]]
+    respuesta = np.zeros((alto, ancho), dtype=np.float64)
+
+    for fila in range(1, alto - 1):
+        for columna in range(1, ancho - 1):
+            acumulador = 0.0
+            for mf in range(3):
+                for mc in range(3):
+                    acumulador += int(imagen[fila - 1 + mf, columna - 1 + mc]) * kernel[mf][mc]
+            respuesta[fila, columna] = acumulador
+
+    return (
+        normalizar_matriz_uint8(respuesta),
+        normalizar_matriz_uint8(np.abs(respuesta)),
+        normalizar_matriz_uint8(respuesta),
+    )
+
+
 def filtro_frecuencia_pasaaltas(imagen, d0):
     """
     Filtro gaussiano pasa-altas en dominio de frecuencia.
@@ -787,14 +985,14 @@ def binarizar_imagen(imagen_gris, umbral):
     return resultado
 
 
-def etiquetar_regiones_bfs(imagen_binaria, min_area=50):
+def etiquetar_regiones_bfs(imagen_binaria, min_area=50, max_area=None):
     """
     Etiqueta regiones conexas (4-vecindad) con BFS manual.
     Devuelve lista de regiones ordenadas de mayor a menor area.
-    Solo incluye regiones con area >= min_area.
+    Solo incluye regiones con min_area <= area <= max_area cuando max_area existe.
     No usa scipy ni cv2.connectedComponents.
     """
-    print(f"[modelo] Etiquetando regiones BFS (min_area={min_area})...")
+    print(f"[modelo] Etiquetando regiones BFS (min_area={min_area}, max_area={max_area})...")
     alto, ancho = imagen_binaria.shape
     visitado = [[False] * ancho for _ in range(alto)]
     regiones = []
@@ -821,6 +1019,8 @@ def etiquetar_regiones_bfs(imagen_binaria, min_area=50):
 
                 area = len(pixeles)
                 if area < min_area:
+                    continue
+                if max_area is not None and max_area > 0 and area > max_area:
                     continue
 
                 fila_min = pixeles[0][0]
@@ -896,4 +1096,74 @@ def dibujar_bounding_boxes(imagen_binaria, regiones):
             if 0 <= c1 < ancho:
                 rgb[f, c1] = [255, 0, 0]
 
+    return rgb
+
+
+def dibujar_bounding_boxes_sobre_imagen(imagen_base, regiones):
+    """Dibuja bounding boxes verdes sobre una imagen base RGB o gris."""
+    if imagen_base.ndim == 2:
+        alto, ancho = imagen_base.shape
+        rgb = np.zeros((alto, ancho, 3), dtype=np.uint8)
+        for fila in range(alto):
+            for columna in range(ancho):
+                valor = imagen_base[fila, columna]
+                rgb[fila, columna, 0] = valor
+                rgb[fila, columna, 1] = valor
+                rgb[fila, columna, 2] = valor
+    else:
+        rgb = imagen_base.copy()
+
+    alto, ancho = rgb.shape[:2]
+    color = [80, 255, 80]
+    grosor = 2
+
+    for reg in regiones:
+        f0, c0, f1, c1 = reg["bbox"]
+        for offset in range(grosor):
+            ff0 = f0 + offset
+            ff1 = f1 - offset
+            cc0 = c0 + offset
+            cc1 = c1 - offset
+            for c in range(max(0, cc0), min(ancho, cc1 + 1)):
+                if 0 <= ff0 < alto:
+                    rgb[ff0, c] = color
+                if 0 <= ff1 < alto:
+                    rgb[ff1, c] = color
+            for f in range(max(0, ff0), min(alto, ff1 + 1)):
+                if 0 <= cc0 < ancho:
+                    rgb[f, cc0] = color
+                if 0 <= cc1 < ancho:
+                    rgb[f, cc1] = color
+
+    return rgb
+
+
+def componer_tira_recortes(imagen, regiones, tamano=64, separacion=4):
+    """Extrae cada bbox, lo redimensiona y lo compone en una sola tira horizontal."""
+    if not regiones:
+        return np.zeros((tamano, tamano, 3), dtype=np.uint8)
+
+    recortes = []
+    for region in regiones:
+        f0, c0, f1, c1 = region["bbox"]
+        recorte = imagen[f0:f1 + 1, c0:c1 + 1]
+        if recorte.size == 0:
+            continue
+        redim = cv2.resize(recorte, (tamano, tamano), interpolation=cv2.INTER_NEAREST)
+        recortes.append(redim)
+
+    if not recortes:
+        return np.zeros((tamano, tamano, 3), dtype=np.uint8)
+
+    ancho_total = len(recortes) * tamano + (len(recortes) - 1) * separacion
+    tira = np.full((tamano, ancho_total), 255, dtype=np.uint8)
+
+    posicion = 0
+    for recorte in recortes:
+        tira[:, posicion:posicion + tamano] = recorte
+        posicion += tamano + separacion
+
+    rgb = np.zeros((tamano, ancho_total, 3), dtype=np.uint8)
+    for canal in range(3):
+        rgb[:, :, canal] = tira
     return rgb

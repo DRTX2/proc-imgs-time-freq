@@ -14,11 +14,14 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
+    QSpinBox,
+    QSizePolicy,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from aplicacion import ParametrosProcesamiento, ProcesadorImagen
 import modelo
 
 
@@ -203,114 +206,18 @@ QComboBox QAbstractItemView {
 
 
 class WorkerProcesoCompleto(QThread):
-    terminado = Signal(dict)
+    terminado = Signal(object)
     error = Signal(str)
 
-    def __init__(self, args):
+    def __init__(self, parametros, procesador=None):
         super().__init__()
-        self.args = args
+        self.parametros = parametros
+        self.procesador = procesador or ProcesadorImagen()
 
     def run(self):
         try:
-            print("[pipeline] Iniciando procesamiento completo...")
-            img_rgb   = self.args["img_rgb"]
-            ruido     = self.args["ruido"]
-            tam_mascara = self.args["mascara"]
-            d0        = self.args["d0"]
-            tipo_filtro = self.args["tipo_filtro"]
-
-            # 1. Grises
-            img_gris = modelo.convertir_a_grises(img_rgb)
-            hist_gris = modelo.calcular_histograma_grises(img_gris)
-            print("[pipeline] Grises listos.")
-
-            # 2. Ecualizacion de histograma
-            img_normalizada = modelo.normalizar_histograma_grises(img_gris)
-            hist_normalizada = modelo.calcular_histograma_grises(img_normalizada)
-            print("[pipeline] Normalizacion lista.")
-
-            # 3. Ruido sal y pimienta sobre la imagen ecualizada
-            img_ruido = modelo.agregar_ruido_sal_pimienta(img_normalizada, ruido)
-            print("[pipeline] Ruido listo.")
-
-            # 4. Filtros espaciales (media / mediana / moda) sobre imagen con ruido
-            if tipo_filtro == "Media":
-                resultado_espacial = modelo.filtro_media(img_ruido, tam_mascara)
-            elif tipo_filtro == "Mediana":
-                resultado_espacial = modelo.filtro_mediana(img_ruido, tam_mascara)
-            else:
-                resultado_espacial = modelo.filtro_moda(img_ruido, tam_mascara)
-            mapa_cambio = modelo.diferencia_absoluta_manual(img_ruido, resultado_espacial)
-            print(f"[pipeline] Filtro espacial listo: {tipo_filtro}.")
-
-            # 5. Filtros de gradiente / bordes acentuados sobre imagen con ruido
-            grad_roberts    = modelo.filtro_roberts(img_ruido)
-            grad_prewitt    = modelo.filtro_prewitt(img_ruido)
-            grad_sobel      = modelo.filtro_sobel(img_ruido)
-            grad_laplaciano = modelo.filtro_laplaciano(img_ruido)
-            # Gradiente puro (pasa-altas espacial)
-            grads_puros = modelo.gradientes_bordes(img_ruido)
-            print("[pipeline] Filtros de gradiente listos.")
-
-            # 6. Filtro gaussiano pasa bajas en dominio de frecuencia (FFT)
-            resultado_frecuencia   = modelo.filtro_frecuencia_gaussiano(img_ruido, d0)
-            diagnostico_frecuencia = modelo.diagnostico_frecuencia(img_ruido, d0)
-            # 7. Filtro gaussiano pasa altas en dominio de frecuencia (FFT)
-            diagnostico_pa = modelo.diagnostico_pasaaltas(img_ruido, d0)
-            print("[pipeline] Frecuencia lista.")
-
-            # 8. Binarización + etiquetado BFS + bounding boxes
-            umbral   = self.args.get("umbral", 128)
-            min_area = self.args.get("min_area", 50)
-            img_binaria = modelo.binarizar_imagen(img_normalizada, umbral)
-            regiones    = modelo.etiquetar_regiones_bfs(img_binaria, min_area)
-            img_bboxes  = modelo.dibujar_bounding_boxes(img_binaria, regiones)
-            print(f"[pipeline] Binarización lista. Regiones: {len(regiones)}")
-
-            self.terminado.emit(
-                {
-                    "original":              img_rgb,
-                    "gris":                  img_gris,
-                    "hist_gris":             hist_gris,
-                    "normalizada":           img_normalizada,
-                    "hist_normalizada":      hist_normalizada,
-                    "ruido":                 img_ruido,
-                    "espacial":              resultado_espacial,
-                    "mapa_cambio":           mapa_cambio,
-                    # sharpening (original + gradiente)
-                    "grad_roberts":          grad_roberts,
-                    "grad_prewitt":          grad_prewitt,
-                    "grad_sobel":            grad_sobel,
-                    "grad_laplaciano":       grad_laplaciano,
-                    # gradiente puro (pasa-altas espacial)
-                    "roberts_grad":          grads_puros["roberts_grad"],
-                    "prewitt_grad":          grads_puros["prewitt_grad"],
-                    "sobel_grad":            grads_puros["sobel_grad"],
-                    "laplaciano_grad":       grads_puros["laplaciano_grad"],
-                    # pasa-bajas frecuencia
-                    "frecuencia":            resultado_frecuencia,
-                    "espectro_original":     diagnostico_frecuencia["espectro_original"],
-                    "mascara_frecuencia":    diagnostico_frecuencia["mascara"],
-                    "espectro_filtrado":     diagnostico_frecuencia["espectro_filtrado"],
-                    # pasa-altas frecuencia
-                    "espectro_original_pa":  diagnostico_pa["espectro_original_pa"],
-                    "mascara_pasaaltas":     diagnostico_pa["mascara_pasaaltas"],
-                    "espectro_filtrado_pa":  diagnostico_pa["espectro_filtrado_pa"],
-                    "pasaaltas_resultado":   diagnostico_pa["pasaaltas_resultado"],
-                    # binarización y regiones
-                    "binaria":               img_binaria,
-                    "bboxes":                img_bboxes,
-                    "n_regiones":            len(regiones),
-                    "regiones":              regiones,
-                    "umbral":                umbral,
-                    # meta
-                    "tipo_filtro":           tipo_filtro,
-                    "mascara":               tam_mascara,
-                    "d0":                    d0,
-                    "ruido_porcentaje":      int(round(ruido * 100)),
-                }
-            )
-            print("[pipeline] Todo el proceso termino bien.")
+            resultado = self.procesador.ejecutar(self.parametros)
+            self.terminado.emit(resultado)
         except Exception as exc:
             print(f"[pipeline] Error: {exc}")
             self.error.emit(str(exc))
@@ -418,6 +325,7 @@ class VentanaPrincipal(QMainWindow):
         self.img_rgb = None
         self.max_mascara = 3
         self.worker = None
+        self.ultimo_resultado = None
 
         self._build_ui()
         self._mostrar_placeholders()
@@ -565,7 +473,7 @@ class VentanaPrincipal(QMainWindow):
         layout.setSpacing(10)
 
         descripcion = QLabel(
-            "Filtros espaciales (media, mediana, moda) aplicados sobre la imagen con ruido."
+            "Flujo espacial principal: ruido → suavizado → acentuado."
         )
         descripcion.setObjectName("Muted")
         descripcion.setWordWrap(True)
@@ -573,10 +481,10 @@ class VentanaPrincipal(QMainWindow):
 
         self.canvas_espacial = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "normalizada",  "titulo": "Imagen normalizada"},
                 {"tipo": "imagen", "clave": "ruido",        "titulo": "Con ruido sal y pimienta"},
-                {"tipo": "imagen", "clave": "espacial",     "titulo": "Resultado espacial"},
-                {"tipo": "imagen", "clave": "mapa_cambio",  "titulo": "Mapa de cambio"},
+                {"tipo": "imagen", "clave": "suavizada",    "titulo": "Imagen suavizada"},
+                {"tipo": "imagen", "clave": "acentuada",    "titulo": "Imagen acentuada"},
+                {"tipo": "imagen", "clave": "mapa_cambio",  "titulo": "Mapa de cambio del suavizado"},
             ],
             2,
             2,
@@ -587,60 +495,61 @@ class VentanaPrincipal(QMainWindow):
     def _crear_tab_gradiente(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        subtabs = QTabWidget()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        # --- sub-pestaña 1: sharpening (original + gradiente) ---
-        tab_sharp = QWidget()
-        lay_sharp = QVBoxLayout(tab_sharp)
-        lay_sharp.setContentsMargins(4, 4, 4, 4)
-        desc_sharp = QLabel(
-            "Sharpening: imagen acentuada = original + gradiente. "
-            "Realza contornos manteniendo la información de la imagen."
+        contenido = QWidget()
+        contenido.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        contenido_layout = QVBoxLayout(contenido)
+        contenido_layout.setContentsMargins(8, 8, 8, 8)
+        contenido_layout.setSpacing(10)
+
+        descripcion = QLabel(
+            "Etapa sugerida por la retroalimentación: acentuado → binarización → gradiente → binarización final de bordes."
         )
-        desc_sharp.setObjectName("Muted")
-        desc_sharp.setWordWrap(True)
-        lay_sharp.addWidget(desc_sharp)
+        descripcion.setObjectName("Muted")
+        descripcion.setWordWrap(True)
+        contenido_layout.addWidget(descripcion)
+
         self.canvas_gradiente = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "ruido",           "titulo": "Entrada con ruido"},
-                {"tipo": "imagen", "clave": "grad_roberts",    "titulo": "Sharpening Roberts"},
-                {"tipo": "imagen", "clave": "grad_prewitt",    "titulo": "Sharpening Prewitt"},
-                {"tipo": "imagen", "clave": "grad_sobel",      "titulo": "Sharpening Sobel"},
-                {"tipo": "imagen", "clave": "grad_laplaciano", "titulo": "Sharpening Laplaciano"},
+                {"tipo": "imagen", "clave": "acentuada",         "titulo": "Imagen acentuada"},
+                {"tipo": "imagen", "clave": "binaria_acentuada", "titulo": "Binarizada post-acentuado"},
+                {"tipo": "imagen", "clave": "gradiente_final",   "titulo": "Gradiente seleccionado"},
+                {"tipo": "imagen", "clave": "binaria",           "titulo": "Bordes binarios finales"},
             ],
-            2, 3, self,
+            2,
+            2,
+            self,
         )
-        lay_sharp.addWidget(self.canvas_gradiente)
-        subtabs.addTab(tab_sharp, "Acentuado (sharpening)")
+        contenido_layout.addWidget(self.canvas_gradiente)
 
-        # --- sub-pestaña 2: gradiente puro (pasa-altas espacial) ---
-        tab_grad = QWidget()
-        lay_grad = QVBoxLayout(tab_grad)
-        lay_grad.setContentsMargins(4, 4, 4, 4)
-        desc_grad = QLabel(
-            "Gradiente puro: solo la magnitud del operador de bordes. "
-            "Equivale a un filtro pasa-altas espacial; resalta únicamente los contornos."
+        subtitulo_componentes = QLabel(
+            "Componentes del operador aplicado sobre la imagen binarizada de entrada."
         )
-        desc_grad.setObjectName("Muted")
-        desc_grad.setWordWrap(True)
-        lay_grad.addWidget(desc_grad)
-        self.canvas_gradiente_puro = CanvasResultados(
+        subtitulo_componentes.setObjectName("Muted")
+        subtitulo_componentes.setWordWrap(True)
+        contenido_layout.addWidget(subtitulo_componentes)
+
+        self.canvas_componentes_gradiente = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "ruido",           "titulo": "Entrada con ruido"},
-                {"tipo": "imagen", "clave": "roberts_grad",    "titulo": "Roberts (gradiente)"},
-                {"tipo": "imagen", "clave": "prewitt_grad",    "titulo": "Prewitt (gradiente)"},
-                {"tipo": "imagen", "clave": "sobel_grad",      "titulo": "Sobel (gradiente)"},
-                {"tipo": "imagen", "clave": "laplaciano_grad", "titulo": "Laplaciano (gradiente)"},
+                {"tipo": "imagen", "clave": "comp_0", "titulo": "Componente 1"},
+                {"tipo": "imagen", "clave": "comp_1", "titulo": "Componente 2"},
+                {"tipo": "imagen", "clave": "comp_2", "titulo": "Componente 3"},
             ],
-            2, 3, self,
+            1,
+            3,
+            self,
         )
-        lay_grad.addWidget(self.canvas_gradiente_puro)
-        subtabs.addTab(tab_grad, "Gradiente puro (pasa-altas)")
+        contenido_layout.addWidget(self.canvas_componentes_gradiente)
+        contenido_layout.addStretch(1)
 
-        layout.addWidget(subtabs)
+        scroll.setWidget(contenido)
+        layout.addWidget(scroll)
         return tab
 
     def _crear_tab_frecuencia(self):
@@ -709,8 +618,8 @@ class VentanaPrincipal(QMainWindow):
         layout.setSpacing(10)
 
         descripcion = QLabel(
-            "Binarización por umbral sobre imagen normalizada → BFS para etiquetar regiones → "
-            "bounding boxes de cada región encontrada (área ≥ área mínima)."
+            "Las regiones se detectan sobre la salida binaria de bordes. "
+            "El filtro por área mínima y máxima ayuda a descartar ruido o regiones demasiado grandes."
         )
         descripcion.setObjectName("Muted")
         descripcion.setWordWrap(True)
@@ -723,13 +632,23 @@ class VentanaPrincipal(QMainWindow):
 
         self.canvas_binarizacion = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "normalizada", "titulo": "Imagen normalizada"},
-                {"tipo": "imagen", "clave": "binaria",     "titulo": "Imagen binarizada"},
-                {"tipo": "imagen", "clave": "bboxes",      "titulo": "Bounding boxes"},
+                {"tipo": "imagen", "clave": "binaria_acentuada", "titulo": "Binarizada post-acentuado"},
+                {"tipo": "imagen", "clave": "binaria",           "titulo": "Bordes binarios finales"},
+                {"tipo": "imagen", "clave": "bboxes",            "titulo": "Bounding boxes"},
             ],
             1, 3, self,
         )
         layout.addWidget(self.canvas_binarizacion)
+
+        self.canvas_recortes = CanvasResultados(
+            [
+                {"tipo": "imagen", "clave": "recortes_tira", "titulo": "Submatrices normalizadas — entrada al clasificador"},
+            ],
+            1,
+            1,
+            self,
+        )
+        layout.addWidget(self.canvas_recortes)
         return tab
 
     def _crear_tarjeta_control(self, titulo, ayuda=None):
@@ -771,11 +690,18 @@ class VentanaPrincipal(QMainWindow):
         layout_principal.addWidget(tarjeta)
 
     def _agregar_bloque_filtro_espacial(self, layout_principal):
-        tarjeta, bloque = self._crear_tarjeta_control("Dominio espacial")
+        tarjeta, bloque = self._crear_tarjeta_control(
+            "Dominio espacial",
+            "Primero se suaviza la imagen y luego se escoge un operador de acentuado.",
+        )
 
-        self.combo_filtro = ComboSoloDropdown()
-        self.combo_filtro.addItems(["Media", "Mediana", "Moda"])
-        bloque.addWidget(self.combo_filtro)
+        lbl_suavizado = QLabel("Suavizado")
+        lbl_suavizado.setObjectName("CardHint")
+        bloque.addWidget(lbl_suavizado)
+
+        self.combo_suavizado = ComboSoloDropdown()
+        self.combo_suavizado.addItems(["Media", "Mediana", "Moda"])
+        bloque.addWidget(self.combo_suavizado)
 
         self.lbl_kernel = QLabel("Mascara 3x3")
         self.lbl_kernel.setObjectName("ValueBadge")
@@ -791,6 +717,14 @@ class VentanaPrincipal(QMainWindow):
         self.sl_mascara.setStyleSheet(estilo_slider("#7A8CF0"))
         self.sl_mascara.valueChanged.connect(self._on_mascara)
         bloque.addWidget(self.sl_mascara)
+
+        lbl_acentuado = QLabel("Acentuado")
+        lbl_acentuado.setObjectName("CardHint")
+        bloque.addWidget(lbl_acentuado)
+
+        self.combo_acentuado = ComboSoloDropdown()
+        self.combo_acentuado.addItems(["Roberts", "Prewitt", "Sobel", "Laplaciano"])
+        bloque.addWidget(self.combo_acentuado)
 
         layout_principal.addWidget(tarjeta)
 
@@ -812,7 +746,7 @@ class VentanaPrincipal(QMainWindow):
     def _agregar_bloque_binarizacion(self, layout_principal):
         tarjeta, bloque = self._crear_tarjeta_control(
             "Binarización y Regiones",
-            "Umbral: pixel >= umbral → blanco. Min área: descarta regiones pequeñas.",
+            "Después del acentuado se binariza, luego se calcula el gradiente y de ahí salen las regiones.",
         )
 
         self.lbl_umbral = QLabel("Umbral 128")
@@ -826,16 +760,31 @@ class VentanaPrincipal(QMainWindow):
         self.sl_umbral.valueChanged.connect(lambda v: self.lbl_umbral.setText(f"Umbral {v}"))
         bloque.addWidget(self.sl_umbral)
 
-        self.lbl_min_area = QLabel("Área mín 50 px²")
-        self.lbl_min_area.setObjectName("ValueBadge")
-        bloque.addWidget(self.lbl_min_area, alignment=Qt.AlignLeft)
+        lbl_gradiente = QLabel("Gradiente")
+        lbl_gradiente.setObjectName("CardHint")
+        bloque.addWidget(lbl_gradiente)
 
-        self.sl_min_area = QSlider(Qt.Horizontal)
-        self.sl_min_area.setRange(1, 2000)
-        self.sl_min_area.setValue(50)
-        self.sl_min_area.setStyleSheet(estilo_slider("#34D399"))
-        self.sl_min_area.valueChanged.connect(lambda v: self.lbl_min_area.setText(f"Área mín {v} px²"))
-        bloque.addWidget(self.sl_min_area)
+        self.combo_gradiente = ComboSoloDropdown()
+        self.combo_gradiente.addItems(["Roberts", "Prewitt", "Sobel", "Laplaciano"])
+        bloque.addWidget(self.combo_gradiente)
+
+        lbl_min_area = QLabel("Área mínima")
+        lbl_min_area.setObjectName("CardHint")
+        bloque.addWidget(lbl_min_area)
+
+        self.spin_min_area = QSpinBox()
+        self.spin_min_area.setRange(1, 999999)
+        self.spin_min_area.setValue(50)
+        bloque.addWidget(self.spin_min_area)
+
+        lbl_max_area = QLabel("Área máxima (0 = sin límite)")
+        lbl_max_area.setObjectName("CardHint")
+        bloque.addWidget(lbl_max_area)
+
+        self.spin_max_area = QSpinBox()
+        self.spin_max_area.setRange(0, 999999)
+        self.spin_max_area.setValue(0)
+        bloque.addWidget(self.spin_max_area)
 
         layout_principal.addWidget(tarjeta)
 
@@ -866,6 +815,16 @@ class VentanaPrincipal(QMainWindow):
         self.sl_d0.blockSignals(False)
         self._actualizar_lbl_d0(sugerido)
 
+    def _actualizar_opciones_area(self, alto, ancho):
+        total = max(1, alto * ancho)
+        sugerido_max = min(total, max(500, total // 2))
+        self.spin_min_area.setMaximum(total)
+        self.spin_max_area.setMaximum(total)
+        if self.spin_min_area.value() > total:
+            self.spin_min_area.setValue(min(50, total))
+        if self.spin_max_area.value() > total:
+            self.spin_max_area.setValue(sugerido_max)
+
     def _kernel_actual(self):
         valor = self.sl_mascara.value()
         if valor % 2 == 0:
@@ -892,10 +851,11 @@ class VentanaPrincipal(QMainWindow):
         self.canvas_preprocesamiento.actualizar()
         self.canvas_espacial.actualizar()
         self.canvas_gradiente.actualizar()
-        self.canvas_gradiente_puro.actualizar()
+        self.canvas_componentes_gradiente.actualizar()
         self.canvas_frecuencia.actualizar()
         self.canvas_pasaaltas.actualizar()
         self.canvas_binarizacion.actualizar()
+        self.canvas_recortes.actualizar()
         self.lbl_regiones_info.setText("Sin datos.")
 
     def _cargar_imagen(self):
@@ -924,16 +884,19 @@ class VentanaPrincipal(QMainWindow):
             self.max_mascara = modelo.calcular_tamano_mascara_maximo(self.img_rgb)
             self._actualizar_opciones_kernel(self.max_mascara)
             self._actualizar_opciones_d0(alto, ancho)
+            self._actualizar_opciones_area(alto, ancho)
             self.btn_procesar.setEnabled(True)
             self.lbl_estado.setText("Imagen lista. Ajusta parametros y pulsa Procesar todo.")
             self.canvas_preprocesamiento.actualizar({"original": self.img_rgb})
             self.canvas_espacial.actualizar()
             self.canvas_gradiente.actualizar()
-            self.canvas_gradiente_puro.actualizar()
+            self.canvas_componentes_gradiente.actualizar()
             self.canvas_frecuencia.actualizar()
             self.canvas_pasaaltas.actualizar()
             self.canvas_binarizacion.actualizar()
+            self.canvas_recortes.actualizar()
             self.lbl_regiones_info.setText("Sin datos.")
+            self.ultimo_resultado = None
         except Exception as exc:
             self.lbl_estado.setText(f"Error al cargar la imagen: {exc}")
 
@@ -943,6 +906,7 @@ class VentanaPrincipal(QMainWindow):
 
         print("[ui] Limpiando resultados y reiniciando controles...")
         self.img_rgb = None
+        self.ultimo_resultado = None
         self.lbl_path.setText("Ninguna imagen cargada")
         self.lbl_size.setText("")
         self.lbl_estado.setText("Carga una imagen para empezar.")
@@ -950,8 +914,11 @@ class VentanaPrincipal(QMainWindow):
         self.sl_mascara.setValue(3)
         self.sl_d0.setValue(45)
         self.sl_umbral.setValue(128)
-        self.sl_min_area.setValue(50)
-        self.combo_filtro.setCurrentText("Media")
+        self.spin_min_area.setValue(50)
+        self.spin_max_area.setValue(0)
+        self.combo_suavizado.setCurrentText("Media")
+        self.combo_acentuado.setCurrentText("Sobel")
+        self.combo_gradiente.setCurrentText("Sobel")
 
         self.btn_procesar.setEnabled(False)
         self._mostrar_placeholders()
@@ -965,106 +932,111 @@ class VentanaPrincipal(QMainWindow):
         self.btn_cargar.setEnabled(False)
         self.btn_limpiar.setEnabled(False)
         self.lbl_estado.setText("Procesando preprocesamiento, dominio espacial y frecuencia...")
-        args = {
-            "img_rgb":     self.img_rgb.copy(),
-            "ruido":       self.sl_ruido.value() / 100.0,
-            "mascara":     self._kernel_actual(),
-            "d0":          self.sl_d0.value(),
-            "tipo_filtro": self.combo_filtro.currentText(),
-            "umbral":      self.sl_umbral.value(),
-            "min_area":    self.sl_min_area.value(),
-        }
+        parametros = ParametrosProcesamiento(
+            img_rgb=self.img_rgb.copy(),
+            ruido=self.sl_ruido.value() / 100.0,
+            mascara=self._kernel_actual(),
+            d0=self.sl_d0.value(),
+            tipo_suavizado=self.combo_suavizado.currentText(),
+            tipo_acentuado=self.combo_acentuado.currentText(),
+            tipo_gradiente=self.combo_gradiente.currentText(),
+            umbral=self.sl_umbral.value(),
+            min_area=self.spin_min_area.value(),
+            max_area=self.spin_max_area.value(),
+        )
 
-        self.worker = WorkerProcesoCompleto(args)
+        self.worker = WorkerProcesoCompleto(parametros)
         self.worker.terminado.connect(self._on_proceso_listo)
         self.worker.error.connect(self._on_error)
         self.worker.start()
 
     def _on_proceso_listo(self, resultado):
         print("[ui] Actualizando paneles con los resultados...")
-        self.canvas_preprocesamiento.actualizar(resultado)
+        self.ultimo_resultado = resultado
+        datos = resultado.a_diccionario()
+        self.canvas_preprocesamiento.actualizar(datos)
 
-        filtro = resultado["tipo_filtro"]
-        mascara = resultado["mascara"]
+        filtro = resultado.tipo_suavizado
+        mascara = resultado.mascara
 
         self.canvas_espacial.actualizar_titulos(
             [
-                "Imagen normalizada",
-                f"Ruido sal y pimienta ({resultado['ruido_porcentaje']} %)",
-                f"Resultado {filtro} ({mascara}x{mascara})",
-                "Mapa de cambio",
+                f"Ruido sal y pimienta ({resultado.ruido_porcentaje} %)",
+                f"Suavizado {filtro} ({mascara}x{mascara})",
+                f"Acentuado {resultado.tipo_acentuado}",
+                "Mapa de cambio del suavizado",
             ]
         )
-        self.canvas_espacial.actualizar(resultado)
+        self.canvas_espacial.actualizar(datos)
         self.canvas_gradiente.actualizar_titulos(
             [
-                f"Entrada con ruido ({resultado['ruido_porcentaje']} %)",
-                "Sharpening Roberts",
-                "Sharpening Prewitt",
-                "Sharpening Sobel",
-                "Sharpening Laplaciano",
+                f"Acentuado {resultado.tipo_acentuado}",
+                f"Binarizada (umbral={resultado.umbral})",
+                f"Gradiente {resultado.tipo_gradiente}",
+                "Bordes binarios finales",
             ]
         )
-        self.canvas_gradiente.actualizar(resultado)
-
-        self.canvas_gradiente_puro.actualizar_titulos(
-            [
-                f"Entrada con ruido ({resultado['ruido_porcentaje']} %)",
-                "Roberts (gradiente puro)",
-                "Prewitt (gradiente puro)",
-                "Sobel (gradiente puro)",
-                "Laplaciano (gradiente puro)",
-            ]
+        self.canvas_gradiente.actualizar(datos)
+        componentes = resultado.componentes_gradiente
+        self.canvas_componentes_gradiente.actualizar_titulos(componentes["titulos"])
+        self.canvas_componentes_gradiente.actualizar(
+            {
+                "comp_0": componentes["imagenes"][0],
+                "comp_1": componentes["imagenes"][1],
+                "comp_2": componentes["imagenes"][2],
+            }
         )
-        self.canvas_gradiente_puro.actualizar(resultado)
 
         self.canvas_frecuencia.actualizar_titulos(
             [
                 "Imagen normalizada",
-                f"Entrada con ruido ({resultado['ruido_porcentaje']} %)",
+                f"Entrada con ruido ({resultado.ruido_porcentaje} %)",
                 "Espectro FFT",
-                f"Mascara pasa-bajas (D0={resultado['d0']})",
+                f"Mascara pasa-bajas (D0={resultado.d0})",
                 "Espectro filtrado",
                 "Imagen reconstruida",
             ]
         )
-        self.canvas_frecuencia.actualizar(resultado)
+        self.canvas_frecuencia.actualizar(datos)
 
         self.canvas_pasaaltas.actualizar_titulos(
             [
-                f"Entrada con ruido ({resultado['ruido_porcentaje']} %)",
+                f"Entrada con ruido ({resultado.ruido_porcentaje} %)",
                 "Espectro FFT",
-                f"Mascara pasa-altas (D0={resultado['d0']})",
+                f"Mascara pasa-altas (D0={resultado.d0})",
                 "Espectro filtrado",
                 "Imagen reconstruida",
             ]
         )
-        self.canvas_pasaaltas.actualizar(resultado)
+        self.canvas_pasaaltas.actualizar(datos)
 
         # Tab binarización
-        n = resultado["n_regiones"]
-        umbral_usado = resultado["umbral"]
-        min_area_usado = self.sl_min_area.value()
-        top3 = resultado["regiones"][:3]
+        n = resultado.n_regiones
+        umbral_usado = resultado.umbral
+        min_area_usado = resultado.min_area
+        max_area_usado = resultado.max_area
+        top3 = resultado.regiones[:3]
         resumen_top = "  |  ".join(
             f"R{r['label']}: {r['area']} px² / per={r['perimetro']}" for r in top3
         )
+        texto_max = max_area_usado if max_area_usado > 0 else "sin límite"
         self.lbl_regiones_info.setText(
-            f"Umbral: {umbral_usado}  |  Área mín: {min_area_usado} px²  |  "
+            f"Umbral: {umbral_usado}  |  Área mín: {min_area_usado} px²  |  Área máx: {texto_max}  |  "
             f"Regiones encontradas: {n}    Top-3 por área → {resumen_top if top3 else 'ninguna'}"
         )
         self.canvas_binarizacion.actualizar_titulos(
             [
-                "Imagen normalizada",
-                f"Binarizada (umbral={umbral_usado})",
+                f"Binarizada post-acentuado (umbral={umbral_usado})",
+                f"Bordes binarios ({resultado.tipo_gradiente})",
                 f"Bounding boxes ({n} regiones)",
             ]
         )
-        self.canvas_binarizacion.actualizar(resultado)
+        self.canvas_binarizacion.actualizar(datos)
+        self.canvas_recortes.actualizar(datos)
 
         self.lbl_estado.setText(
             f"Completado. Espacial: {filtro} {mascara}x{mascara} | "
-            f"Frecuencia: D0={resultado['d0']} px | "
+            f"Frecuencia: D0={resultado.d0} px | "
             f"Regiones: {n} (umbral={umbral_usado})."
         )
         self.btn_procesar.setEnabled(True)
