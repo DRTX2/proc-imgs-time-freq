@@ -766,3 +766,134 @@ def diagnostico_pasaaltas(imagen, d0):
         "espectro_filtrado_pa": espectro_log(espectro_filtrado),
         "pasaaltas_resultado":  resultado,
     }
+
+# ---------------------------------------------------------------------------
+# Binarizacion y deteccion de regiones (bounding boxes)
+# ---------------------------------------------------------------------------
+
+def binarizar_imagen(imagen_gris, umbral):
+    """
+    Binarizacion manual por umbral global.
+    Pixel >= umbral  =>  255 (blanco / objeto)
+    Pixel <  umbral  =>  0   (negro / fondo)
+    """
+    print(f"[modelo] Binarizando con umbral={umbral}...")
+    alto, ancho = imagen_gris.shape
+    resultado = np.zeros((alto, ancho), dtype=np.uint8)
+    for fila in range(alto):
+        for columna in range(ancho):
+            if int(imagen_gris[fila, columna]) >= umbral:
+                resultado[fila, columna] = 255
+    return resultado
+
+
+def etiquetar_regiones_bfs(imagen_binaria, min_area=50):
+    """
+    Etiqueta regiones conexas (4-vecindad) con BFS manual.
+    Devuelve lista de regiones ordenadas de mayor a menor area.
+    Solo incluye regiones con area >= min_area.
+    No usa scipy ni cv2.connectedComponents.
+    """
+    print(f"[modelo] Etiquetando regiones BFS (min_area={min_area})...")
+    alto, ancho = imagen_binaria.shape
+    visitado = [[False] * ancho for _ in range(alto)]
+    regiones = []
+    label = 0
+    vecinos_4 = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+
+    for fila_ini in range(alto):
+        for col_ini in range(ancho):
+            if imagen_binaria[fila_ini, col_ini] == 255 and not visitado[fila_ini][col_ini]:
+                cola = [(fila_ini, col_ini)]
+                visitado[fila_ini][col_ini] = True
+                pixeles = []
+                cabeza = 0
+                while cabeza < len(cola):
+                    f, c = cola[cabeza]
+                    cabeza += 1
+                    pixeles.append((f, c))
+                    for df, dc in vecinos_4:
+                        nf, nc = f + df, c + dc
+                        if 0 <= nf < alto and 0 <= nc < ancho:
+                            if imagen_binaria[nf, nc] == 255 and not visitado[nf][nc]:
+                                visitado[nf][nc] = True
+                                cola.append((nf, nc))
+
+                area = len(pixeles)
+                if area < min_area:
+                    continue
+
+                fila_min = pixeles[0][0]
+                fila_max = pixeles[0][0]
+                col_min  = pixeles[0][1]
+                col_max  = pixeles[0][1]
+                for f, c in pixeles:
+                    if f < fila_min:
+                        fila_min = f
+                    if f > fila_max:
+                        fila_max = f
+                    if c < col_min:
+                        col_min = c
+                    if c > col_max:
+                        col_max = c
+
+                perimetro = 0
+                for f, c in pixeles:
+                    es_borde = False
+                    for df, dc in vecinos_4:
+                        nf, nc = f + df, c + dc
+                        if nf < 0 or nf >= alto or nc < 0 or nc >= ancho:
+                            es_borde = True
+                            break
+                        if imagen_binaria[nf, nc] == 0:
+                            es_borde = True
+                            break
+                    if es_borde:
+                        perimetro += 1
+
+                label += 1
+                regiones.append({
+                    "label":     label,
+                    "area":      area,
+                    "perimetro": perimetro,
+                    "bbox":      (fila_min, col_min, fila_max, col_max),
+                    "pixeles":   pixeles,
+                })
+
+    for i in range(len(regiones) - 1):
+        for j in range(i + 1, len(regiones)):
+            if regiones[j]["area"] > regiones[i]["area"]:
+                regiones[i], regiones[j] = regiones[j], regiones[i]
+
+    print(f"[modelo] Regiones encontradas: {len(regiones)}")
+    return regiones
+
+
+def dibujar_bounding_boxes(imagen_binaria, regiones):
+    """
+    Dibuja bounding boxes rojos sobre copia RGB de la imagen binaria.
+    Sin usar cv2.rectangle.
+    """
+    alto, ancho = imagen_binaria.shape
+    rgb = np.zeros((alto, ancho, 3), dtype=np.uint8)
+    for fila in range(alto):
+        for columna in range(ancho):
+            v = imagen_binaria[fila, columna]
+            rgb[fila, columna, 0] = v
+            rgb[fila, columna, 1] = v
+            rgb[fila, columna, 2] = v
+
+    for reg in regiones:
+        f0, c0, f1, c1 = reg["bbox"]
+        for c in range(c0, c1 + 1):
+            if 0 <= f0 < alto:
+                rgb[f0, c] = [255, 0, 0]
+            if 0 <= f1 < alto:
+                rgb[f1, c] = [255, 0, 0]
+        for f in range(f0, f1 + 1):
+            if 0 <= c0 < ancho:
+                rgb[f, c0] = [255, 0, 0]
+            if 0 <= c1 < ancho:
+                rgb[f, c1] = [255, 0, 0]
+
+    return rgb

@@ -258,6 +258,15 @@ class WorkerProcesoCompleto(QThread):
             # 7. Filtro gaussiano pasa altas en dominio de frecuencia (FFT)
             diagnostico_pa = modelo.diagnostico_pasaaltas(img_ruido, d0)
             print("[pipeline] Frecuencia lista.")
+
+            # 8. Binarización + etiquetado BFS + bounding boxes
+            umbral   = self.args.get("umbral", 128)
+            min_area = self.args.get("min_area", 50)
+            img_binaria = modelo.binarizar_imagen(img_normalizada, umbral)
+            regiones    = modelo.etiquetar_regiones_bfs(img_binaria, min_area)
+            img_bboxes  = modelo.dibujar_bounding_boxes(img_binaria, regiones)
+            print(f"[pipeline] Binarización lista. Regiones: {len(regiones)}")
+
             self.terminado.emit(
                 {
                     "original":              img_rgb,
@@ -288,6 +297,12 @@ class WorkerProcesoCompleto(QThread):
                     "mascara_pasaaltas":     diagnostico_pa["mascara_pasaaltas"],
                     "espectro_filtrado_pa":  diagnostico_pa["espectro_filtrado_pa"],
                     "pasaaltas_resultado":   diagnostico_pa["pasaaltas_resultado"],
+                    # binarización y regiones
+                    "binaria":               img_binaria,
+                    "bboxes":                img_bboxes,
+                    "n_regiones":            len(regiones),
+                    "regiones":              regiones,
+                    "umbral":                umbral,
                     # meta
                     "tipo_filtro":           tipo_filtro,
                     "mascara":               tam_mascara,
@@ -455,6 +470,7 @@ class VentanaPrincipal(QMainWindow):
         self._agregar_bloque_ruido(sidebar_layout)
         self._agregar_bloque_filtro_espacial(sidebar_layout)
         self._agregar_bloque_filtro_frecuencia(sidebar_layout)
+        self._agregar_bloque_binarizacion(sidebar_layout)
 
         self.btn_procesar = QPushButton("Procesar todo")
         self.btn_procesar.setObjectName("ActionButton")
@@ -506,6 +522,7 @@ class VentanaPrincipal(QMainWindow):
         self.tabs.addTab(self._crear_tab_espacial(), "Dominio espacial")
         self.tabs.addTab(self._crear_tab_frecuencia(), "Dominio de frecuencia")
         self.tabs.addTab(self._crear_tab_gradiente(), "Filtros de borde")
+        self.tabs.addTab(self._crear_tab_binarizacion(), "Binarización y Regiones")
 
         canvas_layout.addWidget(self.tabs)
         contenido_layout.addWidget(canvas_panel, 1)
@@ -682,8 +699,37 @@ class VentanaPrincipal(QMainWindow):
         )
         lay_pa.addWidget(self.canvas_pasaaltas)
         subtabs.addTab(tab_pa, "Pasa-altas (gaussiano)")
-
         layout.addWidget(subtabs)
+        return tab
+
+    def _crear_tab_binarizacion(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        descripcion = QLabel(
+            "Binarización por umbral sobre imagen normalizada → BFS para etiquetar regiones → "
+            "bounding boxes de cada región encontrada (área ≥ área mínima)."
+        )
+        descripcion.setObjectName("Muted")
+        descripcion.setWordWrap(True)
+        layout.addWidget(descripcion)
+
+        self.lbl_regiones_info = QLabel("Sin datos.")
+        self.lbl_regiones_info.setObjectName("Muted")
+        self.lbl_regiones_info.setWordWrap(True)
+        layout.addWidget(self.lbl_regiones_info)
+
+        self.canvas_binarizacion = CanvasResultados(
+            [
+                {"tipo": "imagen", "clave": "normalizada", "titulo": "Imagen normalizada"},
+                {"tipo": "imagen", "clave": "binaria",     "titulo": "Imagen binarizada"},
+                {"tipo": "imagen", "clave": "bboxes",      "titulo": "Bounding boxes"},
+            ],
+            1, 3, self,
+        )
+        layout.addWidget(self.canvas_binarizacion)
         return tab
 
     def _crear_tarjeta_control(self, titulo, ayuda=None):
@@ -761,6 +807,35 @@ class VentanaPrincipal(QMainWindow):
         self.sl_d0.setStyleSheet(estilo_slider("#F2B15E"))
         self.sl_d0.valueChanged.connect(self._actualizar_lbl_d0)
         bloque.addWidget(self.sl_d0)
+        layout_principal.addWidget(tarjeta)
+
+    def _agregar_bloque_binarizacion(self, layout_principal):
+        tarjeta, bloque = self._crear_tarjeta_control(
+            "Binarización y Regiones",
+            "Umbral: pixel >= umbral → blanco. Min área: descarta regiones pequeñas.",
+        )
+
+        self.lbl_umbral = QLabel("Umbral 128")
+        self.lbl_umbral.setObjectName("ValueBadge")
+        bloque.addWidget(self.lbl_umbral, alignment=Qt.AlignLeft)
+
+        self.sl_umbral = QSlider(Qt.Horizontal)
+        self.sl_umbral.setRange(0, 255)
+        self.sl_umbral.setValue(128)
+        self.sl_umbral.setStyleSheet(estilo_slider("#A78BFA"))
+        self.sl_umbral.valueChanged.connect(lambda v: self.lbl_umbral.setText(f"Umbral {v}"))
+        bloque.addWidget(self.sl_umbral)
+
+        self.lbl_min_area = QLabel("Área mín 50 px²")
+        self.lbl_min_area.setObjectName("ValueBadge")
+        bloque.addWidget(self.lbl_min_area, alignment=Qt.AlignLeft)
+
+        self.sl_min_area = QSlider(Qt.Horizontal)
+        self.sl_min_area.setRange(1, 2000)
+        self.sl_min_area.setValue(50)
+        self.sl_min_area.setStyleSheet(estilo_slider("#34D399"))
+        self.sl_min_area.valueChanged.connect(lambda v: self.lbl_min_area.setText(f"Área mín {v} px²"))
+        bloque.addWidget(self.sl_min_area)
 
         layout_principal.addWidget(tarjeta)
 
@@ -820,6 +895,8 @@ class VentanaPrincipal(QMainWindow):
         self.canvas_gradiente_puro.actualizar()
         self.canvas_frecuencia.actualizar()
         self.canvas_pasaaltas.actualizar()
+        self.canvas_binarizacion.actualizar()
+        self.lbl_regiones_info.setText("Sin datos.")
 
     def _cargar_imagen(self):
         if self.worker and self.worker.isRunning():
@@ -855,6 +932,8 @@ class VentanaPrincipal(QMainWindow):
             self.canvas_gradiente_puro.actualizar()
             self.canvas_frecuencia.actualizar()
             self.canvas_pasaaltas.actualizar()
+            self.canvas_binarizacion.actualizar()
+            self.lbl_regiones_info.setText("Sin datos.")
         except Exception as exc:
             self.lbl_estado.setText(f"Error al cargar la imagen: {exc}")
 
@@ -870,6 +949,8 @@ class VentanaPrincipal(QMainWindow):
         self.sl_ruido.setValue(5)
         self.sl_mascara.setValue(3)
         self.sl_d0.setValue(45)
+        self.sl_umbral.setValue(128)
+        self.sl_min_area.setValue(50)
         self.combo_filtro.setCurrentText("Media")
 
         self.btn_procesar.setEnabled(False)
@@ -890,6 +971,8 @@ class VentanaPrincipal(QMainWindow):
             "mascara":     self._kernel_actual(),
             "d0":          self.sl_d0.value(),
             "tipo_filtro": self.combo_filtro.currentText(),
+            "umbral":      self.sl_umbral.value(),
+            "min_area":    self.sl_min_area.value(),
         }
 
         self.worker = WorkerProcesoCompleto(args)
@@ -958,9 +1041,31 @@ class VentanaPrincipal(QMainWindow):
         )
         self.canvas_pasaaltas.actualizar(resultado)
 
+        # Tab binarización
+        n = resultado["n_regiones"]
+        umbral_usado = resultado["umbral"]
+        min_area_usado = self.sl_min_area.value()
+        top3 = resultado["regiones"][:3]
+        resumen_top = "  |  ".join(
+            f"R{r['label']}: {r['area']} px² / per={r['perimetro']}" for r in top3
+        )
+        self.lbl_regiones_info.setText(
+            f"Umbral: {umbral_usado}  |  Área mín: {min_area_usado} px²  |  "
+            f"Regiones encontradas: {n}    Top-3 por área → {resumen_top if top3 else 'ninguna'}"
+        )
+        self.canvas_binarizacion.actualizar_titulos(
+            [
+                "Imagen normalizada",
+                f"Binarizada (umbral={umbral_usado})",
+                f"Bounding boxes ({n} regiones)",
+            ]
+        )
+        self.canvas_binarizacion.actualizar(resultado)
+
         self.lbl_estado.setText(
             f"Completado. Espacial: {filtro} {mascara}x{mascara} | "
-            f"Frecuencia: D0={resultado['d0']} px."
+            f"Frecuencia: D0={resultado['d0']} px | "
+            f"Regiones: {n} (umbral={umbral_usado})."
         )
         self.btn_procesar.setEnabled(True)
         self.btn_cargar.setEnabled(True)
