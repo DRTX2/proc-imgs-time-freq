@@ -1,0 +1,480 @@
+\documentclass[11pt]{article}
+
+\usepackage[left=2.5cm, right=2cm, top=0.6cm, bottom=2cm, includehead, includefoot]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{parskip}
+\usepackage{float}
+\usepackage{setspace}
+\usepackage{fancyhdr}
+\usepackage{needspace}
+\usepackage{etoolbox}
+\usepackage{url}
+\usepackage{placeins}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
+
+\pagestyle{fancy}
+\fancyhf{}
+\setlength{\headheight}{63pt}
+\setlength{\headsep}{10pt}
+\fancyhead[L]{}
+\fancyhead[R]{}
+\fancyhead[C]{\includegraphics[width=\textwidth]{picture/logo.pdf}}
+\renewcommand{\headrulewidth}{0pt}
+\fancyfoot[C]{\thepage}
+\setlength{\footskip}{18pt}
+
+\setstretch{1.12}
+\setlength{\parskip}{0.65em}
+\setlist[itemize]{leftmargin=1.35cm, itemsep=0.45em, topsep=0.35em}
+\setlist[enumerate]{leftmargin=1.35cm, itemsep=0.45em, topsep=0.35em}
+
+\titleformat{\section}{\normalfont\Large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\large\bfseries}{\thesubsection}{1em}{}
+\preto{\subsection}{\Needspace{10\baselineskip}}
+\preto{\subsubsection}{\Needspace{8\baselineskip}}
+\preto{\subsection}{\FloatBarrier}
+\preto{\subsubsection}{\FloatBarrier}
+
+\title{Informe del Proyecto}
+\raggedbottom
+
+\begin{document}
+
+\renewcommand{\figurename}{Figura}
+\renewcommand{\thesection}{\Roman{section}}
+\begin{center}
+    \textbf{\underline{\normalsize APE 1}}
+\end{center}
+
+\section{PORTADA}
+
+\begin{tabbing}
+    \textbf{Unidad de Organización Curricular:}\hspace{1cm} \= \kill
+    \textbf{Tema:} \> Procesamiento de Imágenes en Dominio Espacial y Frecuencia \\[0.25em]
+    \textbf{Carrera:} \> Ingeniería de Software \\[0.25em]
+    \textbf{Unidad de Organización Curricular:} \> PROFESIONAL \\[0.25em]
+    \textbf{Nivel y Paralelo:} \> Séptimo A \\[0.25em]
+    \textbf{Alumnos participantes:} \> Paul Velastegui \\
+    \> David Manjarres \\[0.25em]
+    \textbf{Asignatura:} \> Inteligencia Artificial \\[0.25em]
+    \textbf{Docente:} \> Ing. Rubén Nogales, Mg.
+\end{tabbing}
+
+\section{INFORME DE GUÍA PRÁCTICA}
+\renewcommand{\thesection}{\arabic{section}}
+
+\subsection{Objetivos}
+\textbf{General:}
+\begin{itemize}
+    \item Desarrollar y documentar una aplicación de escritorio para el procesamiento digital de imágenes, separando el flujo en preprocesamiento, dominio espacial y dominio de frecuencia.
+\end{itemize}
+
+\textbf{Específicos:}
+\begin{itemize}
+    \item Construir una etapa de preprocesamiento que convierta la imagen a escala de grises, aplique normalización min-max y genere una imagen binaria mediante umbral.
+    \item Evaluar filtros espaciales de media, mediana y moda sobre una imagen binaria alterada con ruido sal y pimienta.
+    \item Analizar el filtrado en dominio de frecuencia mediante FFT, máscara gaussiana pasa bajas y reconstrucción de la imagen procesada.
+\end{itemize}
+
+\subsection{Modalidad}
+\begin{tabbing}
+    \hspace{1cm} \= Virtual.
+\end{tabbing}
+
+\subsection{Tiempo de duración}
+\begin{tabbing}
+    \hspace{1cm} \= \textbf{Presenciales:} \= 8 \\
+    \hspace{1cm} \= \textbf{No presenciales:} \= 0
+\end{tabbing}
+
+\subsection{Instrucciones}
+\begin{enumerate}
+    \item Cargar una imagen desde la interfaz.
+    \item Ajustar el umbral de binarización, la cantidad de ruido y los parámetros de filtrado.
+    \item Revisar el resultado del preprocesamiento en la primera pestaña.
+    \item Comparar el efecto de los filtros espaciales en la segunda pestaña.
+    \item Analizar el espectro, la máscara gaussiana y la reconstrucción en la pestaña de frecuencia.
+\end{enumerate}
+
+\subsection{Listado de equipos, materiales y recursos}
+\begin{itemize}
+    \item Computador con Python 3 instalado.
+    \item Imagen digital de prueba en formato \texttt{png}, \texttt{jpg}, \texttt{jpeg} o \texttt{bmp}.
+    \item Editor de código y terminal para ejecutar el programa.
+    \item Entorno virtual con las dependencias del proyecto.
+\end{itemize}
+
+\subsubsection*{Dependencias de Python utilizadas}
+\begin{itemize}
+    \item \textbf{OpenCV:} se emplea para leer la imagen desde disco y convertir la carga inicial de BGR a RGB. No se usa para binarizar, normalizar ni filtrar.
+    \item \textbf{NumPy:} se emplea para representar imágenes como matrices y para calcular la FFT en el dominio de frecuencia.
+    \item \textbf{PySide6:} se usa para construir la interfaz gráfica, los botones, selectores, pestañas y controles deslizantes.
+    \item \textbf{Matplotlib:} se usa para renderizar las imágenes y gráficos dentro de la interfaz.
+\end{itemize}
+
+\textbf{TAC (Tecnologías para el Aprendizaje y Conocimiento) empleados en la guía práctica:}
+
+$\square$ Plataformas educativas \\
+$\square$ Simuladores y laboratorios virtuales \\
+$\blacksquare$ Aplicaciones educativas \\
+$\square$ Recursos audiovisuales \\
+$\square$ Gamificación \\
+$\blacksquare$ Inteligencia Artificial \\
+Otros (Especifique): \underline{\hspace{5cm}}
+
+\subsection{Actividades por desarrollar}
+\begin{enumerate}
+    \item Preparar una interfaz gráfica que permita cargar una imagen y controlar los parámetros principales.
+    \item Procesar la imagen original hasta obtener una base binaria.
+    \item Agregar ruido sal y pimienta para evaluar el comportamiento de los filtros.
+    \item Aplicar filtros espaciales y comparar su efecto mediante una imagen filtrada y un mapa de cambio.
+    \item Transformar la imagen al dominio de frecuencia, aplicar una máscara gaussiana y reconstruir la imagen filtrada.
+\end{enumerate}
+
+\subsection{Resultados obtenidos}
+
+Esta sección reúne la fundamentación necesaria, la descripción del programa y la interpretación de las imágenes generadas por la aplicación. De esta forma, cada resultado visual se relaciona con el procesamiento que lo produce y con el objetivo técnico de la tarea.
+
+El procesamiento digital de imágenes trabaja con representaciones discretas de una escena. En una imagen digital, cada píxel contiene un valor de intensidad o un conjunto de valores por canal de color. Las técnicas implementadas en este proyecto se organizan en dos grupos principales: operaciones en el dominio espacial y operaciones en el dominio de frecuencia.
+
+En el dominio espacial, el procesamiento se realiza directamente sobre los valores de los píxeles. Esto permite aplicar operaciones locales, como filtros por vecindad, donde el nuevo valor de un píxel se calcula a partir de los píxeles cercanos. Según Gonzalez y Woods \cite{gonzalez}, este enfoque es directo y útil para tareas como suavizado, reducción de ruido, realce y segmentación.
+
+En el dominio de frecuencia, la imagen se analiza mediante sus componentes espectrales. La transformada discreta de Fourier permite representar una imagen como combinación de frecuencias. Las bajas frecuencias describen cambios suaves de intensidad, mientras que las altas frecuencias se relacionan con bordes, detalles finos y ruido. La FFT, propuesta como algoritmo eficiente para calcular la transformada discreta de Fourier \cite{cooley}, permite realizar este cambio de dominio con costo computacional razonable.
+
+\subsubsection{Aplicaciones del procesamiento de imágenes}
+
+Las técnicas tratadas en esta práctica tienen aplicaciones directas en problemas reales donde se necesita mejorar, limpiar o segmentar información visual. En imágenes médicas, por ejemplo, el realce de contraste y la reducción de ruido ayudan a distinguir estructuras anatómicas antes de una segmentación o diagnóstico asistido \cite{gonzalez}. En astronomía y teledetección, el filtrado y el análisis de frecuencias permiten resaltar estructuras extensas, reducir variaciones no deseadas y preparar imágenes para análisis posteriores \cite{pratt}. En documentos digitalizados o inspección industrial, la binarización y los filtros espaciales facilitan separar texto, defectos o regiones de interés del fondo \cite{jain}.
+
+En este proyecto esas aplicaciones se representan de forma controlada sobre una imagen de formación estelar W51. La imagen contiene zonas de alto brillo, regiones oscuras, detalles finos y textura; por eso es útil para observar cómo el preprocesamiento ajusta el rango de intensidades, cómo el ruido sal y pimienta altera la imagen binaria y cómo los filtros espaciales y frecuenciales responden ante esa degradación.
+
+\subsubsection{Conversión a escala de grises}
+
+El programa convierte la imagen RGB a escala de grises mediante la ponderación de luminancia:
+\begin{equation}
+    I_{gris}=0.299R+0.587G+0.114B
+    \label{eq:grises}
+\end{equation}
+Esta expresión asigna mayor peso al canal verde porque la percepción humana es más sensible a sus variaciones, y pesos menores a los canales rojo y azul \cite{gonzalez}. En el código esta operación se implementa con recorridos pixel a pixel, sin usar una función automática de OpenCV para convertir a grises.
+
+\subsubsection{Normalización min-max}
+
+La normalización min-max ajusta los niveles de intensidad de una imagen al rango completo disponible, sin redistribuir el histograma mediante una función acumulada. Este procedimiento toma el valor mínimo y el valor máximo presentes en la imagen en escala de grises, y reescala cada píxel proporcionalmente dentro del intervalo de 0 a 255. De esta forma, se aprovecha todo el rango dinámico antes de aplicar la binarización \cite{gonzalez,jain}.
+
+En la implementación del proyecto, el mínimo y el máximo se calculan mediante recorridos manuales sobre la matriz de intensidades. Luego se aplica la transformación:
+\begin{equation}
+    I_{norm}(x,y)=\frac{I_{gris}(x,y)-I_{min}}{I_{max}-I_{min}}\times 255
+    \label{eq:minmax}
+\end{equation}
+donde $I_{min}$ e $I_{max}$ representan, respectivamente, el menor y el mayor valor de intensidad encontrados en la imagen. Si ambos valores son iguales, el programa conserva la imagen original para evitar una división por cero.
+
+\subsubsection{Binarización por umbral}
+
+La binarización reduce la imagen a dos valores: negro y blanco. Esta operación es útil cuando se desea separar regiones de interés del fondo. En el programa, la imagen normalizada por min-max se transforma en binaria mediante un umbral ajustable:
+\begin{equation}
+    I_{bin}(x,y)=
+    \begin{cases}
+        255, & \text{si } I(x,y)\geq T \\
+        0, & \text{si } I(x,y)<T
+    \end{cases}
+    \label{eq:binaria}
+\end{equation}
+El valor $T$ se controla desde la interfaz. Esta decisión permite observar cómo cambia la segmentación cuando el usuario desplaza el umbral.
+
+\subsubsection{Ruido sal y pimienta}
+
+El ruido sal y pimienta modifica píxeles aislados convirtiéndolos en blanco o negro. Este tipo de degradación es útil para probar filtros de restauración porque afecta puntos concretos sin cambiar necesariamente la estructura global de la imagen. La aplicación lo introduce después de la binarización, de modo que los filtros espaciales y el filtro de frecuencia parten de la misma base con ruido.
+
+\subsubsection{Filtros espaciales}
+
+El filtro de media calcula el promedio de los valores de una ventana. Su efecto principal es suavizar la imagen, aunque puede difuminar bordes y generar tonos intermedios cuando la entrada es binaria.
+
+El filtro de mediana ordena los valores de la ventana y toma el valor central. Este filtro es ampliamente usado contra ruido impulsivo porque los valores extremos aislados tienden a desaparecer al seleccionar el elemento central de la distribución local \cite{gonzalez}.
+
+El filtro de moda cuenta la frecuencia de aparición de los valores dentro de la ventana y selecciona el valor más repetido. En imágenes binarias, este comportamiento es coherente porque la salida tiende a conservar el valor dominante de la vecindad.
+
+\subsubsection{Filtrado gaussiano en frecuencia}
+
+El filtro gaussiano pasa bajas atenúa componentes alejadas del centro del espectro. En el proyecto se usa la transformada rápida de Fourier (FFT, \textit{Fast Fourier Transform}) de NumPy para transformar la imagen al dominio de frecuencia. Luego se construye manualmente la máscara:
+\begin{equation}
+    H(u,v)=e^{-D(u,v)^2/(2D_0^2)}
+    \label{eq:gauss}
+\end{equation}
+donde $D(u,v)$ es la distancia desde el punto $(u,v)$ hasta el centro del espectro, y $D_0$ (distancia de corte o apertura del filtro) controla qué tan amplia es la región de frecuencias que se conserva. Un $D_0$ pequeño produce mayor suavizado porque deja pasar menos componentes; un $D_0$ grande conserva más información de detalle.
+
+Después de aplicar la máscara al espectro, se realiza la transformada inversa para regresar al dominio espacial. La reconstrucción resultante se normaliza para visualizarla en el rango de 0 a 255.
+
+\subsubsection{Descripción del programa}
+
+El programa se divide en dos archivos principales. El archivo \texttt{modelo.py} contiene el procesamiento numérico de la imagen: carga, conversión a grises, normalización min-max, binarización, ruido, filtros espaciales, filtrado en frecuencia y mapa de cambio. El archivo \texttt{interfaz.py} contiene la interfaz de usuario y administra el flujo de procesamiento mediante un hilo de trabajo para evitar que la ventana se bloquee mientras se ejecutan filtros costosos.
+
+La primera parte del programa es común para todos los resultados. En esta etapa se obtiene una imagen binaria con ruido que funcionará como entrada compartida para la comparación posterior. Esta secuencia evita que cada filtro trabaje con una imagen distinta y permite analizar el efecto real de cada método.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        node distance=0.52cm,
+        etapa/.style={draw, rounded corners=2pt, align=center, minimum height=0.82cm, text width=2.25cm, font=\small},
+        flecha/.style={-{Latex[length=2mm]}, thick}
+    ]
+        \node[etapa] (rgb) {Imagen RGB};
+        \node[etapa, right=of rgb] (gris) {Escala de grises};
+        \node[etapa, right=of gris] (norm) {Normalización min-max};
+        \node[etapa, right=of norm] (bin) {Binarización};
+        \node[etapa, right=of bin] (ruido) {Ruido sal y pimienta};
+
+        \draw[flecha] (rgb) -- (gris);
+        \draw[flecha] (gris) -- (norm);
+        \draw[flecha] (norm) -- (bin);
+        \draw[flecha] (bin) -- (ruido);
+    \end{tikzpicture}
+    \caption{Cadena común de preprocesamiento hasta obtener la imagen binaria con ruido.}
+    \label{fig:diagrama_preprocesamiento}
+\end{figure}
+
+Desde esa base común se generan dos ramas. La rama espacial trabaja directamente con vecindades de píxeles, mientras que la rama de frecuencia transforma la imagen al espectro, aplica una máscara y reconstruye el resultado. La separación permite comparar dos enfoques distintos sobre la misma entrada.
+
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{%
+    \begin{tikzpicture}[
+        node distance=0.65cm,
+        etapa/.style={draw, rounded corners=2pt, align=center, minimum height=0.82cm, text width=2.45cm, font=\small},
+        rama/.style={draw, rounded corners=2pt, align=center, minimum height=0.82cm, text width=2.55cm, font=\small},
+        flecha/.style={-{Latex[length=2mm]}, thick}
+    ]
+        \node[etapa] (base) {Imagen binaria con ruido};
+        \node[rama, below left=0.9cm and 1.4cm of base] (espacial) {Filtro espacial\\media, mediana o moda};
+        \node[rama, right=of espacial] (resesp) {Resultado espacial\\y mapa de cambio};
+        \node[rama, below right=0.9cm and 1.4cm of base] (fft) {FFT y espectro};
+        \node[rama, right=of fft] (mask) {Máscara gaussiana\\y espectro filtrado};
+        \node[rama, right=of mask] (recon) {Imagen reconstruida};
+
+        \draw[flecha] (base) -- (espacial);
+        \draw[flecha] (espacial) -- (resesp);
+        \draw[flecha] (base) -- (fft);
+        \draw[flecha] (fft) -- (mask);
+        \draw[flecha] (mask) -- (recon);
+    \end{tikzpicture}
+    }
+    \caption{Ramas de procesamiento usadas para comparar dominio espacial y dominio de frecuencia.}
+    \label{fig:diagrama_ramas}
+\end{figure}
+
+Esta organización evita comparaciones injustas. Tanto el dominio espacial como el dominio de frecuencia reciben la misma imagen binaria con ruido, por lo que las diferencias observadas corresponden al método aplicado y no a entradas distintas.
+
+\subsubsection{Controles de la interfaz}
+
+La interfaz expone cuatro grupos de control. El primero permite cargar y limpiar la imagen. El segundo controla el umbral de binarización. El tercero controla la cantidad de ruido sal y pimienta. El cuarto permite seleccionar el filtro espacial y el tamaño de la máscara. Finalmente, el control $D_0$ define la apertura del filtro gaussiano en frecuencia.
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[t]{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.74\textwidth]{img/filtros-izq-1.png}
+        \\[3pt]\small (a) Controles superiores
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.45\textwidth}
+        \centering
+        \includegraphics[width=0.80\textwidth]{img/filtros-izq-2.png}
+        \\[3pt]\small (b) Controles de dominio y ejecución
+    \end{minipage}
+    \caption{Panel lateral de configuración del programa. El usuario controla la imagen de entrada, el umbral, el ruido, el filtro espacial, el tamaño de máscara y el parámetro $D_0$.}
+    \label{fig:controles}
+    \vspace{2pt}
+    {\footnotesize Fuente: Elaboración propia.}
+\end{figure}
+
+Al iniciar el programa, los controles se cargan con valores base para permitir una primera ejecución sin configuración adicional: umbral de binarización en 127, ruido sal y pimienta en 5\%, filtro espacial en media, máscara espacial de $3 \times 3$ y $D_0=45$ píxeles. Estos valores provienen de la inicialización de los controles en \texttt{interfaz.py}. Después de cargar una imagen, el tamaño máximo de la máscara se ajusta según las dimensiones de la imagen para evitar máscaras excesivas, y el valor sugerido de $D_0$ se recalcula tomando como referencia la mitad de la dimensión menor de la imagen. Por ello, el valor inicial observado puede cambiar de forma automática después de seleccionar una imagen.
+
+El uso operativo de la interfaz sigue una secuencia simple: primero se carga la imagen, luego se ajustan el umbral, el ruido, el filtro espacial, el tamaño de máscara y el valor $D_0$. Finalmente, el usuario debe desplazarse hasta la parte inferior del panel lateral y pulsar el botón \textit{Procesar todo}. Esta acción ejecuta el flujo completo y actualiza las tres pestañas de resultados con la misma base binarizada.
+
+En la ejecución documentada se trabajó con un umbral de binarización de 136, ruido sal y pimienta de 30\%, filtro espacial de media con máscara $5 \times 5$ y filtro gaussiano en frecuencia con $D_0=80$. Con esta configuración se espera obtener una imagen binaria suficientemente contrastada, una versión degradada por ruido impulsivo y salidas filtradas que permitan observar la diferencia entre suavizado local por máscara y suavizado global por componentes de frecuencia.
+
+\subsubsection{Imagen de prueba}
+
+La imagen de prueba utilizada en la ejecución corresponde a una región de formación estelar W51. Presenta regiones con textura, zonas claras, zonas oscuras y detalles finos. Estas características permiten observar con mayor claridad el efecto de la normalización min-max, la binarización y los filtros posteriores.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.78\textwidth]{img/w51_original_panel.png}
+    \caption{Imagen de entrada empleada en la ejecución mostrada en las capturas.}
+    \label{fig:entrada}
+    \vspace{2pt}
+    {\footnotesize Fuente: Imagen de prueba cargada en la aplicación.}
+\end{figure}
+
+\subsubsection{Pestaña de preprocesamiento}
+
+La primera vista presenta las etapas previas al filtrado. Se observa la imagen original RGB, su versión en escala de grises, la imagen normalizada por min-max y la imagen binarizada. Esta vista confirma que el programa no aplica directamente los filtros sobre la imagen original, sino sobre una base preprocesada.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.94\textwidth]{img/preprocesamiento.png}
+    \caption{Pestaña de preprocesamiento. La interfaz muestra la imagen RGB, la conversión a grises, la normalización min-max y la binarización final.}
+    \label{fig:preprocesamiento}
+    \vspace{2pt}
+    {\footnotesize Fuente: Elaboración propia.}
+\end{figure}
+
+La imagen normalizada por min-max estira el rango de intensidades disponible sin cambiar el orden relativo de los píxeles. Posteriormente, la binarización convierte esa información a una representación de dos niveles. Esta salida es útil para los filtros de mediana y moda, porque ambos pueden conservar o restaurar regiones dominantes de blanco y negro.
+
+\subsubsection{Pestaña de dominio espacial}
+
+La segunda vista compara la base binarizada, la imagen con ruido, el resultado del filtro espacial seleccionado y el mapa de cambio. En la captura se observa el uso del filtro de media con una máscara de $5 \times 5$ y un nivel de ruido de 30\%.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{img/dominio-espacial.png}
+    \caption{Resultados del dominio espacial. La imagen con ruido se filtra mediante una máscara espacial y se genera un mapa de cambio para visualizar la diferencia entre entrada y salida.}
+    \label{fig:espacial}
+    \vspace{2pt}
+    {\footnotesize Fuente: Elaboración propia.}
+\end{figure}
+
+El mapa de cambio no representa una imagen final mejorada. Su función es diagnóstica: muestra dónde el filtro modificó con mayor fuerza los valores de la imagen. Las zonas más claras indican diferencias más grandes entre la imagen con ruido y la imagen filtrada; las zonas oscuras indican cambios menores. Este recurso ayuda a interpretar la agresividad del filtro y a comparar media, mediana y moda con el mismo criterio.
+
+En la figura de dominio espacial, el mapa de cambio permite observar que las variaciones más notorias aparecen alrededor de puntos aislados de ruido y en bordes donde existen transiciones entre regiones blancas y negras. Esto es coherente con el filtro de media aplicado con máscara $5 \times 5$, ya que el promedio suaviza cambios bruscos y reemplaza píxeles extremos por valores intermedios. Las zonas oscuras del mapa indican áreas donde la estructura binaria se mantuvo relativamente estable; por tanto, el resultado muestra que el filtro actuó con mayor intensidad sobre el ruido impulsivo y sobre fronteras finas de la imagen W51, mientras conservó mejor las regiones amplias.
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[t]{0.31\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{img/media.png}
+        \\[3pt]\small (a) Media
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.31\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{img/mediana.png}
+        \\[3pt]\small (b) Mediana
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.31\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{img/moda.png}
+        \\[3pt]\small (c) Moda
+    \end{minipage}
+    \caption{Comparación de los filtros espaciales con máscara $5 \times 5$. Los tres filtros parten de la misma imagen binaria con ruido, pero generan resultados visualmente distintos.}
+    \label{fig:comparacion_espacial}
+    \vspace{2pt}
+    {\footnotesize Fuente: Elaboración propia.}
+\end{figure}
+
+La comparación entre los tres filtros muestra que la media produce un suavizado más gradual, pero pierde la naturaleza estrictamente binaria de la imagen porque el promedio entre valores 0 y 255 genera intensidades intermedias. En cambio, la mediana conserva mejor las regiones blancas y negras principales, eliminando puntos aislados de ruido sin introducir tantos niveles de gris. La moda ofrece un comportamiento similar a la mediana, aunque su decisión se basa en el valor más frecuente de la vecindad; por ello, en una imagen binaria tiende a reforzar las zonas dominantes y a eliminar píxeles aislados.
+
+Desde el punto de vista de la tarea, mediana y moda resultan más adecuadas cuando se desea mantener una salida binaria después del filtrado. La media es útil para suavizar, pero su resultado debe interpretarse como una imagen en escala de grises y no como una restauración binaria directa.
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{img/dominio-espacial.png}
+        \\[3pt]\small (a) Máscara $5 \times 5$
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{img/dominio-espacial9x9.png}
+        \\[3pt]\small (b) Máscara $9 \times 9$
+    \end{minipage}
+    \caption{Comparación del dominio espacial al modificar el tamaño de la máscara. La máscara $9 \times 9$ produce una limpieza más fuerte, pero también simplifica más las regiones de la imagen.}
+    \label{fig:comparacion_mascaras}
+    \vspace{2pt}
+    {\footnotesize Fuente: Elaboración propia.}
+\end{figure}
+
+La comparación entre las máscaras $5 \times 5$ y $9 \times 9$ evidencia el compromiso entre reducción de ruido y conservación de detalle. Con $5 \times 5$, el filtro actúa sobre una vecindad menor y conserva más irregularidades finas de la imagen binaria. Con $9 \times 9$, la decisión se toma sobre un entorno más amplio; por ello, se eliminan más puntos aislados de ruido, pero también se fusionan regiones y se pierden detalles pequeños. En la imagen de W51 esto permite observar mejor las masas claras principales de la estructura binarizada, aunque a costa de reducir detalles finos alrededor de los bordes.
+
+\subsubsection{Pestaña de dominio de frecuencia}
+
+La tercera vista muestra el procesamiento mediante FFT. En la parte superior se observa la base binarizada, la entrada con ruido y el espectro de Fourier. En la parte inferior se presenta la máscara gaussiana, el espectro filtrado y la imagen reconstruida.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{img/dominio-de-frecuencia.png}
+    \caption{Resultados del dominio de frecuencia. La FFT permite observar el espectro, aplicar una máscara gaussiana pasa bajas y reconstruir una imagen suavizada.}
+    \label{fig:frecuencia}
+    \vspace{2pt}
+    {\footnotesize Fuente: Elaboración propia.}
+\end{figure}
+
+El centro brillante del espectro representa las componentes de baja frecuencia. La máscara gaussiana conserva con mayor fuerza esa zona central y atenúa progresivamente las regiones alejadas. Como resultado, la reconstrucción final reduce parte de las variaciones rápidas de la imagen, aunque puede generar una salida en escala de grises porque el filtrado en frecuencia no obliga a conservar únicamente valores 0 y 255.
+
+La relación entre las imágenes de la pestaña de frecuencia es secuencial. La entrada con ruido se transforma en el espectro FFT; luego, la máscara gaussiana se multiplica por ese espectro para reducir las frecuencias altas; finalmente, el espectro filtrado se transforma de regreso al dominio espacial para obtener la imagen reconstruida. Por esta razón, la imagen reconstruida no debe compararse solo como una copia visual de la entrada, sino como el resultado de conservar principalmente la estructura global y disminuir variaciones bruscas.
+
+Al compararlo con los filtros espaciales, el método en frecuencia actúa de forma global sobre el contenido espectral de toda la imagen. Los filtros espaciales toman decisiones locales por vecindad; el filtro gaussiano en frecuencia modifica la contribución de bajas y altas frecuencias en conjunto. Esta diferencia explica por qué la reconstrucción puede suavizar ruido y detalle fino, pero también puede alterar bordes o generar tonos grises aunque la entrada original sea binaria.
+
+\subsubsection{Alcance de implementación manual}
+
+El programa usa librerías, pero no delega los filtros espaciales principales a funciones ya resueltas de OpenCV o NumPy. La conversión a grises, la normalización min-max, la binarización, la máscara de media, la mediana, la moda, la máscara gaussiana y la multiplicación del espectro se implementan mediante recorridos explícitos o cálculos propios dentro de \texttt{modelo.py}.
+
+El uso de NumPy se justifica por dos motivos. Primero, permite almacenar la imagen como matriz, que es la representación natural del procesamiento digital. Segundo, permite usar la FFT para el dominio de frecuencia. Reimplementar la FFT completa excede el alcance de esta práctica porque se trata de un algoritmo matemático especializado y ampliamente validado \cite{cooley,harris}. Por ello, la práctica concentra el trabajo manual en las etapas estadísticas, espaciales y de construcción de máscaras.
+
+\subsection{Habilidades blandas empleadas en la práctica}
+$\blacksquare$ Trabajo en equipo \\
+$\square$ Liderazgo \\
+$\square$ Comunicación asertiva \\
+$\blacksquare$ Responsabilidad \\
+$\blacksquare$ Pensamiento crítico \\
+$\square$ Adaptabilidad \\
+$\square$ Gestión del tiempo \\
+$\square$ Resolución de conflictos
+
+\subsection{Conclusiones}
+
+La etapa de preprocesamiento permitió transformar una imagen RGB en una representación más adecuada para el análisis posterior. La conversión a escala de grises redujo la información de color a una sola matriz de intensidades, la normalización min-max ajustó los valores al rango completo de 0 a 255 sin utilizar una redistribución acumulada, y la binarización por umbral produjo una base de dos niveles sobre la cual se pudo trabajar de manera controlada. Con ello se comprobó que la calidad de las etapas iniciales condiciona directamente el comportamiento de los filtros posteriores.
+
+La evaluación de los filtros espaciales sobre la imagen con ruido sal y pimienta mostró diferencias claras entre las estrategias locales implementadas. El filtro de media suavizó la imagen, pero generó valores intermedios de gris al promediar una entrada binaria; la mediana redujo mejor el ruido impulsivo porque seleccionó el valor central de la vecindad; y la moda mantuvo coherencia con la estructura binaria al conservar el valor más repetido. El mapa de cambio permitió evidenciar visualmente dónde cada filtro modificó con mayor intensidad la imagen.
+
+El análisis en dominio de frecuencia permitió observar el mismo problema desde una representación distinta a la espacial. La FFT trasladó la imagen al espectro, donde la máscara gaussiana pasa bajas conservó principalmente las bajas frecuencias y atenuó componentes asociadas a detalles rápidos y ruido. La reconstrucción final demostró que el filtrado en frecuencia no trabaja sobre vecindades directas de píxeles, sino sobre componentes espectrales, por lo que su resultado puede diferir de los filtros espaciales aunque parta de la misma imagen con ruido.
+
+\subsection{Recomendaciones}
+
+Se recomienda ajustar el umbral de binarización observando la imagen normalizada por min-max, ya que un valor demasiado bajo puede incluir regiones de fondo como zonas blancas y un valor demasiado alto puede eliminar estructuras relevantes. Para esta tarea, el preprocesamiento debe revisarse antes de aplicar ruido o filtros, porque una binarización deficiente arrastra errores hacia las etapas espacial y frecuencial.
+
+Se recomienda utilizar máscaras espaciales pequeñas o moderadas cuando se trabaje con imágenes de mayor resolución, debido a que los filtros fueron implementados con recorridos manuales y su tiempo de ejecución aumenta con el tamaño de la vecindad. Además, para ruido sal y pimienta conviene priorizar mediana o moda cuando se desea conservar una salida cercana a una imagen binaria.
+
+Se recomienda interpretar el parámetro $D_0$ del filtro gaussiano como un control de suavizado espectral. Valores bajos generan mayor atenuación de detalles y ruido, mientras que valores altos conservan más información del espectro. Por ello, durante la comparación debe modificarse $D_0$ de forma gradual y observar simultáneamente la máscara, el espectro filtrado y la reconstrucción final. También debe considerarse que los filtros de media y frecuencia pueden generar tonos grises aunque la entrada sea binaria, lo cual corresponde al efecto esperado del suavizado y no a un error del programa.
+
+\subsection{Referencias bibliográficas}
+{
+    \renewcommand{\refname}{}
+    \vspace{-1.5em}
+
+    \begin{thebibliography}{99}
+        \bibitem{gonzalez}
+        R. C. Gonzalez and R. E. Woods, \textit{Digital Image Processing}, 4th ed. New York, NY, USA: Pearson, 2018.
+
+        \bibitem{jain}
+        A. K. Jain, \textit{Fundamentals of Digital Image Processing}. Englewood Cliffs, NJ, USA: Prentice Hall, 1989.
+
+        \bibitem{pratt}
+        W. K. Pratt, \textit{Digital Image Processing}, 4th ed. Hoboken, NJ, USA: Wiley, 2007.
+
+        \bibitem{oppenheim}
+        A. V. Oppenheim and R. W. Schafer, \textit{Discrete-Time Signal Processing}, 3rd ed. Upper Saddle River, NJ, USA: Pearson, 2010.
+
+        \bibitem{cooley}
+        J. W. Cooley and J. W. Tukey, ``An algorithm for the machine calculation of complex Fourier series,'' \textit{Mathematics of Computation}, vol. 19, no. 90, pp. 297--301, 1965.
+
+        \bibitem{harris}
+        C. R. Harris et al., ``Array programming with NumPy,'' \textit{Nature}, vol. 585, pp. 357--362, 2020.
+
+        \bibitem{bradski}
+        G. Bradski, ``The OpenCV Library,'' \textit{Dr. Dobb's Journal of Software Tools}, 2000.
+
+        \bibitem{qt}
+        The Qt Company, \textit{Qt for Python Documentation}. [Online]. Available: \url{https://doc.qt.io/qtforpython/}
+    \end{thebibliography}
+}
+
+\end{document}

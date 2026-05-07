@@ -40,7 +40,7 @@ def convertir_a_grises(imagen_rgb):
 
 
 def normalizar_histograma_grises(imagen_gris):
-    """Ecualiza el histograma de una imagen en grises con conteo manual."""
+    """Ecualiza el histograma de una imagen en grises con conteo manual (CDF)."""
     print("[modelo] Ecualizando histograma...")
     alto, ancho = imagen_gris.shape
     histograma = [0] * 256
@@ -88,22 +88,6 @@ def calcular_histograma_grises(imagen_gris):
             histograma[int(imagen_gris[fila, columna])] += 1
 
     return histograma
-
-
-def binarizar_imagen(imagen_gris, umbral):
-    """Binariza manualmente una imagen en grises."""
-    print(f"[modelo] Binarizando con umbral {umbral}...")
-    alto, ancho = imagen_gris.shape
-    resultado = np.zeros((alto, ancho), dtype=np.uint8)
-
-    for fila in range(alto):
-        for columna in range(ancho):
-            if int(imagen_gris[fila, columna]) >= umbral:
-                resultado[fila, columna] = 255
-            else:
-                resultado[fila, columna] = 0
-
-    return resultado
 
 
 def calcular_tamano_mascara_maximo(imagen):
@@ -203,7 +187,7 @@ def convolucionar_manual_grises(imagen, mascara):
 
 def filtro_media(imagen, tamano_mascara):
     """Filtro de media aplicado por canal cuando la imagen es RGB."""
-    # Este fue el suavizado mas directo de dejar andando.
+    # Suaviza promediando los valores de cada vecindad.
     print(f"[modelo] Aplicando filtro de media con mascara {tamano_mascara}x{tamano_mascara}...")
     mascara = crear_mascara_media(tamano_mascara)
     return aplicar_por_canal(imagen, lambda canal: convolucionar_manual_grises(canal, mascara))
@@ -211,14 +195,14 @@ def filtro_media(imagen, tamano_mascara):
 
 def filtro_mediana(imagen, tamano_mascara):
     """Filtro de mediana aplicado por canal."""
-    # Aqui se siente bonito ver como limpia el sal y pimienta.
+    # Reduce ruido impulsivo sin depender de una funcion de mediana externa.
     print(f"[modelo] Aplicando filtro de mediana con mascara {tamano_mascara}x{tamano_mascara}...")
     return aplicar_por_canal(imagen, lambda canal: filtro_mediana_grises(canal, tamano_mascara))
 
 
 def filtro_moda(imagen, tamano_mascara):
     """Filtro de moda aplicado por canal."""
-    # La moda quedo buena para respetar lo binario.
+    # En imagenes binarias conserva el valor predominante de la vecindad.
     print(f"[modelo] Aplicando filtro de moda con mascara {tamano_mascara}x{tamano_mascara}...")
     return aplicar_por_canal(imagen, lambda canal: filtro_moda_grises(canal, tamano_mascara))
 
@@ -394,7 +378,7 @@ def fourier_filtrar_canal(imagen, d0):
 
 def filtro_frecuencia_gaussiano(imagen, d0):
     """Aplica el filtro de frecuencia a una imagen en gris o RGB."""
-    # Esta parte costo, pero ya quedo clara: FFT + gaussiana + regreso.
+    # El filtrado usa FFT de NumPy, pero la mascara se construye en este modulo.
     print(f"[modelo] Aplicando filtro gaussiano en frecuencia con D0={d0}...")
     return aplicar_por_canal(imagen, lambda canal: fourier_filtrar_canal(canal, d0))
 

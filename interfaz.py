@@ -224,12 +224,12 @@ class WorkerProcesoCompleto(QThread):
             hist_gris = modelo.calcular_histograma_grises(img_gris)
             print("[pipeline] Grises listos.")
 
-            # 2. Normalizacion de histograma
+            # 2. Ecualizacion de histograma
             img_normalizada = modelo.normalizar_histograma_grises(img_gris)
             hist_normalizada = modelo.calcular_histograma_grises(img_normalizada)
             print("[pipeline] Normalizacion lista.")
 
-            # 3. Ruido sal y pimienta sobre la imagen normalizada
+            # 3. Ruido sal y pimienta sobre la imagen ecualizada
             img_ruido = modelo.agregar_ruido_sal_pimienta(img_normalizada, ruido)
             print("[pipeline] Ruido listo.")
 
@@ -243,40 +243,40 @@ class WorkerProcesoCompleto(QThread):
             mapa_cambio = modelo.diferencia_absoluta_manual(img_ruido, resultado_espacial)
             print(f"[pipeline] Filtro espacial listo: {tipo_filtro}.")
 
-            # 5. Filtros de gradiente / pasa altos sobre imagen con ruido
-            grad_roberts   = modelo.filtro_roberts(img_ruido)
-            grad_prewitt   = modelo.filtro_prewitt(img_ruido)
-            grad_sobel     = modelo.filtro_sobel(img_ruido)
+            # 5. Filtros de gradiente / bordes acentuados sobre imagen con ruido
+            grad_roberts    = modelo.filtro_roberts(img_ruido)
+            grad_prewitt    = modelo.filtro_prewitt(img_ruido)
+            grad_sobel      = modelo.filtro_sobel(img_ruido)
             grad_laplaciano = modelo.filtro_laplaciano(img_ruido)
             print("[pipeline] Filtros de gradiente listos.")
 
-            # 6. Filtro gaussiano pasa bajas en frecuencia sobre imagen con ruido
-            resultado_frecuencia = modelo.filtro_frecuencia_gaussiano(img_ruido, d0)
+            # 6. Filtro gaussiano pasa bajas en dominio de frecuencia (FFT)
+            resultado_frecuencia   = modelo.filtro_frecuencia_gaussiano(img_ruido, d0)
             diagnostico_frecuencia = modelo.diagnostico_frecuencia(img_ruido, d0)
             print("[pipeline] Frecuencia lista.")
 
             self.terminado.emit(
                 {
-                    "original":          img_rgb,
-                    "gris":              img_gris,
-                    "hist_gris":         hist_gris,
-                    "normalizada":       img_normalizada,
-                    "hist_normalizada":  hist_normalizada,
-                    "ruido":             img_ruido,
-                    "espacial":          resultado_espacial,
-                    "mapa_cambio":       mapa_cambio,
-                    "grad_roberts":      grad_roberts,
-                    "grad_prewitt":      grad_prewitt,
-                    "grad_sobel":        grad_sobel,
-                    "grad_laplaciano":   grad_laplaciano,
-                    "frecuencia":        resultado_frecuencia,
-                    "espectro_original": diagnostico_frecuencia["espectro_original"],
+                    "original":           img_rgb,
+                    "gris":               img_gris,
+                    "hist_gris":          hist_gris,
+                    "normalizada":        img_normalizada,
+                    "hist_normalizada":   hist_normalizada,
+                    "ruido":              img_ruido,
+                    "espacial":           resultado_espacial,
+                    "mapa_cambio":        mapa_cambio,
+                    "grad_roberts":       grad_roberts,
+                    "grad_prewitt":       grad_prewitt,
+                    "grad_sobel":         grad_sobel,
+                    "grad_laplaciano":    grad_laplaciano,
+                    "frecuencia":         resultado_frecuencia,
+                    "espectro_original":  diagnostico_frecuencia["espectro_original"],
                     "mascara_frecuencia": diagnostico_frecuencia["mascara"],
-                    "espectro_filtrado": diagnostico_frecuencia["espectro_filtrado"],
-                    "tipo_filtro":       tipo_filtro,
-                    "mascara":           tam_mascara,
-                    "d0":                d0,
-                    "ruido_porcentaje":  int(round(ruido * 100)),
+                    "espectro_filtrado":  diagnostico_frecuencia["espectro_filtrado"],
+                    "tipo_filtro":        tipo_filtro,
+                    "mascara":            tam_mascara,
+                    "d0":                 d0,
+                    "ruido_porcentaje":   int(round(ruido * 100)),
                 }
             )
             print("[pipeline] Todo el proceso termino bien.")
@@ -436,7 +436,6 @@ class VentanaPrincipal(QMainWindow):
         self.lbl_size = QLabel("")
         self.lbl_size.setObjectName("SidebarMuted")
         sidebar_layout.addWidget(self.lbl_size)
-
         self._agregar_bloque_ruido(sidebar_layout)
         self._agregar_bloque_filtro_espacial(sidebar_layout)
         self._agregar_bloque_filtro_frecuencia(sidebar_layout)
@@ -768,7 +767,6 @@ class VentanaPrincipal(QMainWindow):
             self.max_mascara = modelo.calcular_tamano_mascara_maximo(self.img_rgb)
             self._actualizar_opciones_kernel(self.max_mascara)
             self._actualizar_opciones_d0(alto, ancho)
-
             self.btn_procesar.setEnabled(True)
             self.lbl_estado.setText("Imagen lista. Ajusta parametros y pulsa Procesar todo.")
             self.canvas_preprocesamiento.actualizar({"original": self.img_rgb})
@@ -787,7 +785,6 @@ class VentanaPrincipal(QMainWindow):
         self.lbl_path.setText("Ninguna imagen cargada")
         self.lbl_size.setText("")
         self.lbl_estado.setText("Carga una imagen para empezar.")
-
         self.sl_ruido.setValue(5)
         self.sl_mascara.setValue(3)
         self.sl_d0.setValue(45)
@@ -851,15 +848,15 @@ class VentanaPrincipal(QMainWindow):
                 "Imagen normalizada",
                 f"Entrada con ruido ({resultado['ruido_porcentaje']} %)",
                 "Espectro FFT",
-                f"Mascara gaussiana (D0={resultado['d0']})",
-                "Espectro filtrado",
+                f"Mascara gaussiana (D0={resultado['d0']})",                "Espectro filtrado",
                 "Imagen reconstruida",
             ]
         )
         self.canvas_frecuencia.actualizar(resultado)
 
         self.lbl_estado.setText(
-            f"Completado. Espacial: {filtro} {mascara}x{mascara} | Bordes: Roberts/Prewitt/Sobel/Laplaciano | Frecuencia: D0={resultado['d0']} px."
+            f"Completado. Espacial: {filtro} {mascara}x{mascara} | "
+            f"Frecuencia: D0={resultado['d0']} px."
         )
         self.btn_procesar.setEnabled(True)
         self.btn_cargar.setEnabled(True)
