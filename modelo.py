@@ -460,6 +460,74 @@ def diferencia_absoluta_manual(imagen_a, imagen_b):
 # Filtros de gradiente / pasa altos  (implementacion manual pixel a pixel)
 # ---------------------------------------------------------------------------
 
+def _gradiente_roberts_puro(imagen):
+    """Devuelve solo la magnitud del gradiente Roberts (sin sumar original)."""
+    alto, ancho = imagen.shape
+    resultado = np.zeros((alto, ancho), dtype=np.uint8)
+    for fila in range(alto - 1):
+        for columna in range(ancho - 1):
+            gx = int(imagen[fila, columna]) - int(imagen[fila + 1, columna + 1])
+            gy = int(imagen[fila, columna + 1]) - int(imagen[fila + 1, columna])
+            gradiente = int(math.sqrt(gx * gx + gy * gy))
+            resultado[fila, columna] = min(gradiente, 255)
+    return resultado
+
+
+def _gradiente_prewitt_puro(imagen):
+    """Devuelve solo la magnitud del gradiente Prewitt (sin sumar original)."""
+    alto, ancho = imagen.shape
+    resultado = np.zeros((alto, ancho), dtype=np.uint8)
+    Gx = [[-1, 0, 1], [-1, 0, 1], [-1, 0, 1]]
+    Gy = [[-1, -1, -1], [0, 0, 0], [1, 1, 1]]
+    for fila in range(1, alto - 1):
+        for columna in range(1, ancho - 1):
+            suma_gx = 0.0
+            suma_gy = 0.0
+            for mf in range(3):
+                for mc in range(3):
+                    pixel = int(imagen[fila - 1 + mf, columna - 1 + mc])
+                    suma_gx += pixel * Gx[mf][mc]
+                    suma_gy += pixel * Gy[mf][mc]
+            gradiente = int(math.sqrt(suma_gx * suma_gx + suma_gy * suma_gy))
+            resultado[fila, columna] = min(gradiente, 255)
+    return resultado
+
+
+def _gradiente_sobel_puro(imagen):
+    """Devuelve solo la magnitud del gradiente Sobel (sin sumar original)."""
+    alto, ancho = imagen.shape
+    resultado = np.zeros((alto, ancho), dtype=np.uint8)
+    Gx = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]
+    Gy = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]]
+    for fila in range(1, alto - 1):
+        for columna in range(1, ancho - 1):
+            suma_gx = 0.0
+            suma_gy = 0.0
+            for mf in range(3):
+                for mc in range(3):
+                    pixel = int(imagen[fila - 1 + mf, columna - 1 + mc])
+                    suma_gx += pixel * Gx[mf][mc]
+                    suma_gy += pixel * Gy[mf][mc]
+            gradiente = int(math.sqrt(suma_gx * suma_gx + suma_gy * suma_gy))
+            resultado[fila, columna] = min(gradiente, 255)
+    return resultado
+
+
+def _laplaciano_puro(imagen):
+    """Devuelve solo la respuesta del Laplaciano (sin sumar original, normalizado a [0,255])."""
+    alto, ancho = imagen.shape
+    kernel = [[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]]
+    buffer = np.zeros((alto, ancho), dtype=np.float64)
+    for fila in range(1, alto - 1):
+        for columna in range(1, ancho - 1):
+            acumulador = 0.0
+            for mf in range(3):
+                for mc in range(3):
+                    acumulador += int(imagen[fila - 1 + mf, columna - 1 + mc]) * kernel[mf][mc]
+            buffer[fila, columna] = acumulador
+    return normalizar_matriz_uint8(buffer)
+
+
 def filtro_roberts(imagen):
     """
     Filtro acentuado Roberts (sharpening).
@@ -629,3 +697,72 @@ def filtro_laplaciano(imagen):
         resultado[alto - 1, columna] = imagen[alto - 1, columna]
 
     return resultado
+
+
+def gradientes_bordes(imagen):
+    """
+    Devuelve un dict con el gradiente PURO (pasa-altas espacial) de cada operador.
+    Estas imagenes muestran unicamente los bordes detectados, sin sumar el original.
+    """
+    print("[modelo] Calculando gradientes puros (pasa-altas espacial)...")
+    if imagen.ndim == 3:
+        base = convertir_a_grises(imagen)
+    else:
+        base = imagen
+    return {
+        "roberts_grad":    _gradiente_roberts_puro(base),
+        "prewitt_grad":    _gradiente_prewitt_puro(base),
+        "sobel_grad":      _gradiente_sobel_puro(base),
+        "laplaciano_grad": _laplaciano_puro(base),
+    }
+
+
+def filtro_frecuencia_pasaaltas(imagen, d0):
+    """
+    Filtro gaussiano pasa-altas en dominio de frecuencia.
+    Mascara H_pa = 1 - H_pb(D0)  =>  atenua bajas frecuencias, realza bordes.
+    """
+    print(f"[modelo] Aplicando filtro gaussiano pasa-altas en frecuencia con D0={d0}...")
+
+    def _canal_pasaaltas(canal):
+        alto, ancho = canal.shape
+        espectro = np.fft.fft2(canal.astype(np.float64))
+        espectro_centrado = np.fft.fftshift(espectro)
+        mascara_pb = crear_filtro_gaussiano(alto, ancho, d0)
+        mascara_pa = np.zeros((alto, ancho), dtype=np.float64)
+        for fila in range(alto):
+            for columna in range(ancho):
+                mascara_pa[fila, columna] = 1.0 - mascara_pb[fila, columna]
+        espectro_filtrado = aplicar_filtro_frecuencia(espectro_centrado, mascara_pa)
+        reconstruida = np.fft.ifft2(np.fft.ifftshift(espectro_filtrado))
+        return normalizar_matriz_uint8(np.real(reconstruida))
+
+    return aplicar_por_canal(imagen, _canal_pasaaltas)
+
+
+def diagnostico_pasaaltas(imagen, d0):
+    """Genera imagenes de apoyo para la pestana pasa-altas en frecuencia."""
+    print("[modelo] Armando diagnostico pasa-altas...")
+    if imagen.ndim == 3:
+        base = convertir_a_grises(imagen)
+    else:
+        base = imagen
+
+    alto, ancho = base.shape
+    espectro = np.fft.fft2(base.astype(np.float64))
+    espectro_centrado = np.fft.fftshift(espectro)
+    mascara_pb = crear_filtro_gaussiano(alto, ancho, d0)
+    mascara_pa = np.zeros((alto, ancho), dtype=np.float64)
+    for fila in range(alto):
+        for columna in range(ancho):
+            mascara_pa[fila, columna] = 1.0 - mascara_pb[fila, columna]
+    espectro_filtrado = aplicar_filtro_frecuencia(espectro_centrado, mascara_pa)
+    reconstruida = np.fft.ifft2(np.fft.ifftshift(espectro_filtrado))
+    resultado = normalizar_matriz_uint8(np.real(reconstruida))
+
+    return {
+        "espectro_original_pa": espectro_log(espectro_centrado),
+        "mascara_pasaaltas":    normalizar_matriz_uint8(mascara_pa),
+        "espectro_filtrado_pa": espectro_log(espectro_filtrado),
+        "pasaaltas_resultado":  resultado,
+    }

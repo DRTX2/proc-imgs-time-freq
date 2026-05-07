@@ -248,35 +248,51 @@ class WorkerProcesoCompleto(QThread):
             grad_prewitt    = modelo.filtro_prewitt(img_ruido)
             grad_sobel      = modelo.filtro_sobel(img_ruido)
             grad_laplaciano = modelo.filtro_laplaciano(img_ruido)
+            # Gradiente puro (pasa-altas espacial)
+            grads_puros = modelo.gradientes_bordes(img_ruido)
             print("[pipeline] Filtros de gradiente listos.")
 
             # 6. Filtro gaussiano pasa bajas en dominio de frecuencia (FFT)
             resultado_frecuencia   = modelo.filtro_frecuencia_gaussiano(img_ruido, d0)
             diagnostico_frecuencia = modelo.diagnostico_frecuencia(img_ruido, d0)
+            # 7. Filtro gaussiano pasa altas en dominio de frecuencia (FFT)
+            diagnostico_pa = modelo.diagnostico_pasaaltas(img_ruido, d0)
             print("[pipeline] Frecuencia lista.")
-
             self.terminado.emit(
                 {
-                    "original":           img_rgb,
-                    "gris":               img_gris,
-                    "hist_gris":          hist_gris,
-                    "normalizada":        img_normalizada,
-                    "hist_normalizada":   hist_normalizada,
-                    "ruido":              img_ruido,
-                    "espacial":           resultado_espacial,
-                    "mapa_cambio":        mapa_cambio,
-                    "grad_roberts":       grad_roberts,
-                    "grad_prewitt":       grad_prewitt,
-                    "grad_sobel":         grad_sobel,
-                    "grad_laplaciano":    grad_laplaciano,
-                    "frecuencia":         resultado_frecuencia,
-                    "espectro_original":  diagnostico_frecuencia["espectro_original"],
-                    "mascara_frecuencia": diagnostico_frecuencia["mascara"],
-                    "espectro_filtrado":  diagnostico_frecuencia["espectro_filtrado"],
-                    "tipo_filtro":        tipo_filtro,
-                    "mascara":            tam_mascara,
-                    "d0":                 d0,
-                    "ruido_porcentaje":   int(round(ruido * 100)),
+                    "original":              img_rgb,
+                    "gris":                  img_gris,
+                    "hist_gris":             hist_gris,
+                    "normalizada":           img_normalizada,
+                    "hist_normalizada":      hist_normalizada,
+                    "ruido":                 img_ruido,
+                    "espacial":              resultado_espacial,
+                    "mapa_cambio":           mapa_cambio,
+                    # sharpening (original + gradiente)
+                    "grad_roberts":          grad_roberts,
+                    "grad_prewitt":          grad_prewitt,
+                    "grad_sobel":            grad_sobel,
+                    "grad_laplaciano":       grad_laplaciano,
+                    # gradiente puro (pasa-altas espacial)
+                    "roberts_grad":          grads_puros["roberts_grad"],
+                    "prewitt_grad":          grads_puros["prewitt_grad"],
+                    "sobel_grad":            grads_puros["sobel_grad"],
+                    "laplaciano_grad":       grads_puros["laplaciano_grad"],
+                    # pasa-bajas frecuencia
+                    "frecuencia":            resultado_frecuencia,
+                    "espectro_original":     diagnostico_frecuencia["espectro_original"],
+                    "mascara_frecuencia":    diagnostico_frecuencia["mascara"],
+                    "espectro_filtrado":     diagnostico_frecuencia["espectro_filtrado"],
+                    # pasa-altas frecuencia
+                    "espectro_original_pa":  diagnostico_pa["espectro_original_pa"],
+                    "mascara_pasaaltas":     diagnostico_pa["mascara_pasaaltas"],
+                    "espectro_filtrado_pa":  diagnostico_pa["espectro_filtrado_pa"],
+                    "pasaaltas_resultado":   diagnostico_pa["pasaaltas_resultado"],
+                    # meta
+                    "tipo_filtro":           tipo_filtro,
+                    "mascara":               tam_mascara,
+                    "d0":                    d0,
+                    "ruido_porcentaje":      int(round(ruido * 100)),
                 }
             )
             print("[pipeline] Todo el proceso termino bien.")
@@ -547,8 +563,7 @@ class VentanaPrincipal(QMainWindow):
             ],
             2,
             2,
-            self,
-        )
+            self,        )
         layout.addWidget(self.canvas_espacial)
         return tab
 
@@ -556,56 +571,119 @@ class VentanaPrincipal(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
-        descripcion = QLabel(
-            "Filtros acentuados (sharpening) aplicados sobre la imagen con ruido: original + gradiente (Roberts, Prewitt, Sobel) y original + Laplaciano."
-        )
-        descripcion.setObjectName("Muted")
-        descripcion.setWordWrap(True)
-        layout.addWidget(descripcion)
+        layout.setSpacing(8)
 
+        subtabs = QTabWidget()
+
+        # --- sub-pestaña 1: sharpening (original + gradiente) ---
+        tab_sharp = QWidget()
+        lay_sharp = QVBoxLayout(tab_sharp)
+        lay_sharp.setContentsMargins(4, 4, 4, 4)
+        desc_sharp = QLabel(
+            "Sharpening: imagen acentuada = original + gradiente. "
+            "Realza contornos manteniendo la información de la imagen."
+        )
+        desc_sharp.setObjectName("Muted")
+        desc_sharp.setWordWrap(True)
+        lay_sharp.addWidget(desc_sharp)
         self.canvas_gradiente = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "ruido",          "titulo": "Entrada con ruido"},
-                {"tipo": "imagen", "clave": "grad_roberts",   "titulo": "Roberts"},
-                {"tipo": "imagen", "clave": "grad_prewitt",   "titulo": "Prewitt"},
-                {"tipo": "imagen", "clave": "grad_sobel",     "titulo": "Sobel"},
-                {"tipo": "imagen", "clave": "grad_laplaciano","titulo": "Laplaciano"},
+                {"tipo": "imagen", "clave": "ruido",           "titulo": "Entrada con ruido"},
+                {"tipo": "imagen", "clave": "grad_roberts",    "titulo": "Sharpening Roberts"},
+                {"tipo": "imagen", "clave": "grad_prewitt",    "titulo": "Sharpening Prewitt"},
+                {"tipo": "imagen", "clave": "grad_sobel",      "titulo": "Sharpening Sobel"},
+                {"tipo": "imagen", "clave": "grad_laplaciano", "titulo": "Sharpening Laplaciano"},
             ],
-            2,
-            3,
-            self,
+            2, 3, self,
         )
-        layout.addWidget(self.canvas_gradiente)
+        lay_sharp.addWidget(self.canvas_gradiente)
+        subtabs.addTab(tab_sharp, "Acentuado (sharpening)")
+
+        # --- sub-pestaña 2: gradiente puro (pasa-altas espacial) ---
+        tab_grad = QWidget()
+        lay_grad = QVBoxLayout(tab_grad)
+        lay_grad.setContentsMargins(4, 4, 4, 4)
+        desc_grad = QLabel(
+            "Gradiente puro: solo la magnitud del operador de bordes. "
+            "Equivale a un filtro pasa-altas espacial; resalta únicamente los contornos."
+        )
+        desc_grad.setObjectName("Muted")
+        desc_grad.setWordWrap(True)
+        lay_grad.addWidget(desc_grad)
+        self.canvas_gradiente_puro = CanvasResultados(
+            [
+                {"tipo": "imagen", "clave": "ruido",           "titulo": "Entrada con ruido"},
+                {"tipo": "imagen", "clave": "roberts_grad",    "titulo": "Roberts (gradiente)"},
+                {"tipo": "imagen", "clave": "prewitt_grad",    "titulo": "Prewitt (gradiente)"},
+                {"tipo": "imagen", "clave": "sobel_grad",      "titulo": "Sobel (gradiente)"},
+                {"tipo": "imagen", "clave": "laplaciano_grad", "titulo": "Laplaciano (gradiente)"},
+            ],
+            2, 3, self,
+        )
+        lay_grad.addWidget(self.canvas_gradiente_puro)
+        subtabs.addTab(tab_grad, "Gradiente puro (pasa-altas)")
+
+        layout.addWidget(subtabs)
         return tab
 
     def _crear_tab_frecuencia(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
 
-        descripcion = QLabel(
-            "Dominio de frecuencia con FFT y filtro gaussiano pasa bajas. Se muestran el espectro, la mascara y la reconstruccion final."
+        subtabs = QTabWidget()
+
+        # --- sub-pestaña 1: pasa-bajas gaussiano ---
+        tab_pb = QWidget()
+        lay_pb = QVBoxLayout(tab_pb)
+        lay_pb.setContentsMargins(4, 4, 4, 4)
+        desc_pb = QLabel(
+            "Filtro gaussiano pasa-bajas en frecuencia. "
+            "Atenúa altas frecuencias (bordes, ruido) y suaviza la imagen."
         )
-        descripcion.setObjectName("Muted")
-        descripcion.setWordWrap(True)
-        layout.addWidget(descripcion)
-
+        desc_pb.setObjectName("Muted")
+        desc_pb.setWordWrap(True)
+        lay_pb.addWidget(desc_pb)
         self.canvas_frecuencia = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "normalizada",       "titulo": "Imagen normalizada"},
-                {"tipo": "imagen", "clave": "ruido",             "titulo": "Entrada con ruido"},
-                {"tipo": "imagen", "clave": "espectro_original", "titulo": "Espectro FFT"},
-                {"tipo": "imagen", "clave": "mascara_frecuencia","titulo": "Mascara gaussiana"},
-                {"tipo": "imagen", "clave": "espectro_filtrado", "titulo": "Espectro filtrado"},
-                {"tipo": "imagen", "clave": "frecuencia",        "titulo": "Imagen reconstruida"},
+                {"tipo": "imagen", "clave": "normalizada",        "titulo": "Imagen normalizada"},
+                {"tipo": "imagen", "clave": "ruido",              "titulo": "Entrada con ruido"},
+                {"tipo": "imagen", "clave": "espectro_original",  "titulo": "Espectro FFT"},
+                {"tipo": "imagen", "clave": "mascara_frecuencia", "titulo": "Mascara pasa-bajas"},
+                {"tipo": "imagen", "clave": "espectro_filtrado",  "titulo": "Espectro filtrado"},
+                {"tipo": "imagen", "clave": "frecuencia",         "titulo": "Imagen reconstruida"},
             ],
-            2,
-            3,
-            self,
+            2, 3, self,
         )
-        layout.addWidget(self.canvas_frecuencia)
+        lay_pb.addWidget(self.canvas_frecuencia)
+        subtabs.addTab(tab_pb, "Pasa-bajas (gaussiano)")
+
+        # --- sub-pestaña 2: pasa-altas gaussiano ---
+        tab_pa = QWidget()
+        lay_pa = QVBoxLayout(tab_pa)
+        lay_pa.setContentsMargins(4, 4, 4, 4)
+        desc_pa = QLabel(
+            "Filtro gaussiano pasa-altas en frecuencia (mascara = 1 - pasa-bajas). "
+            "Atenúa bajas frecuencias y realza bordes/detalles finos."
+        )
+        desc_pa.setObjectName("Muted")
+        desc_pa.setWordWrap(True)
+        lay_pa.addWidget(desc_pa)
+        self.canvas_pasaaltas = CanvasResultados(
+            [
+                {"tipo": "imagen", "clave": "ruido",               "titulo": "Entrada con ruido"},
+                {"tipo": "imagen", "clave": "espectro_original_pa","titulo": "Espectro FFT"},
+                {"tipo": "imagen", "clave": "mascara_pasaaltas",   "titulo": "Mascara pasa-altas"},
+                {"tipo": "imagen", "clave": "espectro_filtrado_pa","titulo": "Espectro filtrado"},
+                {"tipo": "imagen", "clave": "pasaaltas_resultado", "titulo": "Imagen reconstruida"},
+            ],
+            2, 3, self,
+        )
+        lay_pa.addWidget(self.canvas_pasaaltas)
+        subtabs.addTab(tab_pa, "Pasa-altas (gaussiano)")
+
+        layout.addWidget(subtabs)
         return tab
 
     def _crear_tarjeta_control(self, titulo, ayuda=None):
@@ -739,7 +817,9 @@ class VentanaPrincipal(QMainWindow):
         self.canvas_preprocesamiento.actualizar()
         self.canvas_espacial.actualizar()
         self.canvas_gradiente.actualizar()
+        self.canvas_gradiente_puro.actualizar()
         self.canvas_frecuencia.actualizar()
+        self.canvas_pasaaltas.actualizar()
 
     def _cargar_imagen(self):
         if self.worker and self.worker.isRunning():
@@ -772,7 +852,9 @@ class VentanaPrincipal(QMainWindow):
             self.canvas_preprocesamiento.actualizar({"original": self.img_rgb})
             self.canvas_espacial.actualizar()
             self.canvas_gradiente.actualizar()
+            self.canvas_gradiente_puro.actualizar()
             self.canvas_frecuencia.actualizar()
+            self.canvas_pasaaltas.actualizar()
         except Exception as exc:
             self.lbl_estado.setText(f"Error al cargar la imagen: {exc}")
 
@@ -803,11 +885,11 @@ class VentanaPrincipal(QMainWindow):
         self.btn_limpiar.setEnabled(False)
         self.lbl_estado.setText("Procesando preprocesamiento, dominio espacial y frecuencia...")
         args = {
-            "img_rgb":    self.img_rgb.copy(),
-            "ruido":      self.sl_ruido.value() / 100.0,
-            "mascara":    self._kernel_actual(),
-            "d0":         self.sl_d0.value(),
-            "tipo_filtro":self.combo_filtro.currentText(),
+            "img_rgb":     self.img_rgb.copy(),
+            "ruido":       self.sl_ruido.value() / 100.0,
+            "mascara":     self._kernel_actual(),
+            "d0":          self.sl_d0.value(),
+            "tipo_filtro": self.combo_filtro.currentText(),
         }
 
         self.worker = WorkerProcesoCompleto(args)
@@ -831,28 +913,50 @@ class VentanaPrincipal(QMainWindow):
             ]
         )
         self.canvas_espacial.actualizar(resultado)
-
         self.canvas_gradiente.actualizar_titulos(
             [
                 f"Entrada con ruido ({resultado['ruido_porcentaje']} %)",
-                "Roberts",
-                "Prewitt",
-                "Sobel",
-                f"Laplaciano",
+                "Sharpening Roberts",
+                "Sharpening Prewitt",
+                "Sharpening Sobel",
+                "Sharpening Laplaciano",
             ]
         )
         self.canvas_gradiente.actualizar(resultado)
+
+        self.canvas_gradiente_puro.actualizar_titulos(
+            [
+                f"Entrada con ruido ({resultado['ruido_porcentaje']} %)",
+                "Roberts (gradiente puro)",
+                "Prewitt (gradiente puro)",
+                "Sobel (gradiente puro)",
+                "Laplaciano (gradiente puro)",
+            ]
+        )
+        self.canvas_gradiente_puro.actualizar(resultado)
 
         self.canvas_frecuencia.actualizar_titulos(
             [
                 "Imagen normalizada",
                 f"Entrada con ruido ({resultado['ruido_porcentaje']} %)",
                 "Espectro FFT",
-                f"Mascara gaussiana (D0={resultado['d0']})",                "Espectro filtrado",
+                f"Mascara pasa-bajas (D0={resultado['d0']})",
+                "Espectro filtrado",
                 "Imagen reconstruida",
             ]
         )
         self.canvas_frecuencia.actualizar(resultado)
+
+        self.canvas_pasaaltas.actualizar_titulos(
+            [
+                f"Entrada con ruido ({resultado['ruido_porcentaje']} %)",
+                "Espectro FFT",
+                f"Mascara pasa-altas (D0={resultado['d0']})",
+                "Espectro filtrado",
+                "Imagen reconstruida",
+            ]
+        )
+        self.canvas_pasaaltas.actualizar(resultado)
 
         self.lbl_estado.setText(
             f"Completado. Espacial: {filtro} {mascara}x{mascara} | "
