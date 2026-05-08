@@ -208,6 +208,35 @@ QComboBox QAbstractItemView {
     border: 1px solid #4A7FA5;
     outline: none;
 }
+QSpinBox {
+    background: #243648;
+    color: #F4F8FC;
+    border: 1px solid #4A7FA5;
+    border-radius: 6px;
+    padding: 4px 8px;
+    min-height: 18px;
+}
+QSpinBox:disabled {
+    color: #8EA1B3;
+    background: #172331;
+}
+QSpinBox::up-button, QSpinBox::down-button {
+    background: #1B2A38;
+    border-left: 1px solid #4A7FA5;
+    width: 14px;
+}
+QSpinBox::up-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid #DDE8F2;
+}
+QSpinBox::down-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #DDE8F2;
+}
 """
 
 
@@ -224,6 +253,25 @@ class WorkerProcesoCompleto(QThread):
         try:
             resultado = self.procesador.ejecutar(self.parametros)
             self.terminado.emit(resultado)
+        except Exception as exc:
+            print(f"[pipeline] Error: {exc}")
+            self.error.emit(str(exc))
+
+
+class WorkerProcesoEtapa(QThread):
+    terminado = Signal(str, object)
+    error = Signal(str)
+
+    def __init__(self, parametros, etapa, procesador=None):
+        super().__init__()
+        self.parametros = parametros
+        self.etapa = etapa
+        self.procesador = procesador or ProcesadorImagen()
+
+    def run(self):
+        try:
+            datos = self.procesador.ejecutar_hasta(self.parametros, self.etapa)
+            self.terminado.emit(self.etapa, datos)
         except Exception as exc:
             print(f"[pipeline] Error: {exc}")
             self.error.emit(str(exc))
@@ -352,6 +400,7 @@ class VentanaPrincipal(QMainWindow):
         self.max_mascara = 3
         self.worker = None
         self.ultimo_resultado = None
+        self.datos_parciales = {}
 
         self._build_ui()
         self._mostrar_placeholders()
@@ -481,8 +530,8 @@ class VentanaPrincipal(QMainWindow):
             [
                 {"tipo": "imagen", "clave": "original",    "titulo": "Imagen original RGB"},
                 {"tipo": "imagen", "clave": "gris",        "titulo": "Escala de grises"},
-                {"tipo": "imagen", "clave": "normalizada", "titulo": "Histograma normalizado"},
                 {"tipo": "imagen", "clave": "ruido",       "titulo": "Con ruido sal y pimienta"},
+                {"tipo": "imagen", "clave": "normalizada", "titulo": "Normalizada post-ruido"},
             ],
             2,
             2,
@@ -496,7 +545,7 @@ class VentanaPrincipal(QMainWindow):
 
         self.canvas_suavizado = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "ruido",     "titulo": "Imagen con ruido"},
+                {"tipo": "imagen", "clave": "normalizada", "titulo": "Base normalizada"},
                 {"tipo": "imagen", "clave": "suavizada", "titulo": "Resultado suavizado"},
             ],
             1,
@@ -669,6 +718,12 @@ class VentanaPrincipal(QMainWindow):
         self.sl_ruido.valueChanged.connect(lambda _: self._actualizar_resumen_flujo())
         bloque.addWidget(self.sl_ruido)
 
+        self.btn_aplicar_pre = QPushButton("Aplicar escala")
+        self.btn_aplicar_pre.setObjectName("ActionButton")
+        self.btn_aplicar_pre.setEnabled(False)
+        self.btn_aplicar_pre.clicked.connect(lambda: self._procesar_etapa("preprocesamiento"))
+        bloque.addWidget(self.btn_aplicar_pre)
+
         layout_principal.addWidget(tarjeta)
 
     def _agregar_bloque_suavizado(self, layout_principal):
@@ -707,9 +762,15 @@ class VentanaPrincipal(QMainWindow):
         self.sl_mascara.valueChanged.connect(self._on_mascara)
         bloque.addWidget(self.sl_mascara)
 
-        self.lbl_modo_suavizado = QLabel("Pasa-bajas gaussiano")
-        self.lbl_modo_suavizado.setObjectName("CardHint")
-        bloque.addWidget(self.lbl_modo_suavizado)
+        self.lbl_frecuencia_suavizado = QLabel("Tipo frecuencial")
+        self.lbl_frecuencia_suavizado.setObjectName("CardHint")
+        bloque.addWidget(self.lbl_frecuencia_suavizado)
+
+        self.combo_frecuencia_suavizado = ComboSoloDropdown()
+        self.combo_frecuencia_suavizado.addItems(["Ideal", "Gaussiano", "Butterworth"])
+        self.combo_frecuencia_suavizado.setCurrentText("Gaussiano")
+        self.combo_frecuencia_suavizado.currentTextChanged.connect(lambda _: self._actualizar_resumen_flujo())
+        bloque.addWidget(self.combo_frecuencia_suavizado)
 
         self.lbl_d0_suavizado = QLabel("D0 de suavizado")
         self.lbl_d0_suavizado.setObjectName("CardHint")
@@ -726,6 +787,12 @@ class VentanaPrincipal(QMainWindow):
         self.sl_d0_suavizado.valueChanged.connect(self._actualizar_lbl_d0_suavizado)
         self.sl_d0_suavizado.valueChanged.connect(lambda _: self._actualizar_resumen_flujo())
         bloque.addWidget(self.sl_d0_suavizado)
+
+        self.btn_aplicar_suavizado = QPushButton("Aplicar suavizado")
+        self.btn_aplicar_suavizado.setObjectName("ActionButton")
+        self.btn_aplicar_suavizado.setEnabled(False)
+        self.btn_aplicar_suavizado.clicked.connect(lambda: self._procesar_etapa("suavizado"))
+        bloque.addWidget(self.btn_aplicar_suavizado)
 
         layout_principal.addWidget(tarjeta)
 
@@ -746,13 +813,21 @@ class VentanaPrincipal(QMainWindow):
         bloque.addWidget(self.lbl_acentuado)
 
         self.combo_acentuado = ComboSoloDropdown()
-        self.combo_acentuado.addItems(["Roberts", "Prewitt", "Sobel", "Laplaciano"])
+        self.combo_acentuado.addItems(["Laplaciano", "Pasa-alto", "High-Boost"])
+        self.combo_acentuado.currentTextChanged.connect(lambda _: self._actualizar_estado_factor_acentuado())
         self.combo_acentuado.currentTextChanged.connect(lambda _: self._actualizar_resumen_flujo())
         bloque.addWidget(self.combo_acentuado)
 
-        self.lbl_modo_acentuado = QLabel("Pasa-altas gaussiano")
-        self.lbl_modo_acentuado.setObjectName("CardHint")
-        bloque.addWidget(self.lbl_modo_acentuado)
+        self.lbl_frecuencia_acentuado = QLabel("Tipo frecuencial")
+        self.lbl_frecuencia_acentuado.setObjectName("CardHint")
+        bloque.addWidget(self.lbl_frecuencia_acentuado)
+
+        self.combo_frecuencia_acentuado = ComboSoloDropdown()
+        self.combo_frecuencia_acentuado.addItems(["Ideal", "Gaussiano", "Butterworth", "High-Boost"])
+        self.combo_frecuencia_acentuado.setCurrentText("Gaussiano")
+        self.combo_frecuencia_acentuado.currentTextChanged.connect(lambda _: self._actualizar_estado_factor_acentuado())
+        self.combo_frecuencia_acentuado.currentTextChanged.connect(lambda _: self._actualizar_resumen_flujo())
+        bloque.addWidget(self.combo_frecuencia_acentuado)
 
         self.lbl_d0_acentuado = QLabel("D0 de acentuado")
         self.lbl_d0_acentuado.setObjectName("CardHint")
@@ -769,6 +844,28 @@ class VentanaPrincipal(QMainWindow):
         self.sl_d0_acentuado.valueChanged.connect(self._actualizar_lbl_d0_acentuado)
         self.sl_d0_acentuado.valueChanged.connect(lambda _: self._actualizar_resumen_flujo())
         bloque.addWidget(self.sl_d0_acentuado)
+
+        self.lbl_factor_acentuado = QLabel("Factor A")
+        self.lbl_factor_acentuado.setObjectName("CardHint")
+        bloque.addWidget(self.lbl_factor_acentuado)
+
+        self.lbl_factor_acentuado_valor = QLabel("A 2.0")
+        self.lbl_factor_acentuado_valor.setObjectName("ValueBadge")
+        bloque.addWidget(self.lbl_factor_acentuado_valor, alignment=Qt.AlignLeft)
+
+        self.sl_factor_acentuado = QSlider(Qt.Horizontal)
+        self.sl_factor_acentuado.setRange(10, 50)
+        self.sl_factor_acentuado.setValue(20)
+        self.sl_factor_acentuado.setStyleSheet(estilo_slider("#56B4D3"))
+        self.sl_factor_acentuado.valueChanged.connect(self._actualizar_lbl_factor_acentuado)
+        self.sl_factor_acentuado.valueChanged.connect(lambda _: self._actualizar_resumen_flujo())
+        bloque.addWidget(self.sl_factor_acentuado)
+
+        self.btn_aplicar_acentuado = QPushButton("Aplicar acentuado")
+        self.btn_aplicar_acentuado.setObjectName("ActionButton")
+        self.btn_aplicar_acentuado.setEnabled(False)
+        self.btn_aplicar_acentuado.clicked.connect(lambda: self._procesar_etapa("acentuado"))
+        bloque.addWidget(self.btn_aplicar_acentuado)
 
         layout_principal.addWidget(tarjeta)
 
@@ -826,6 +923,12 @@ class VentanaPrincipal(QMainWindow):
 
         bloque.addLayout(fila_area)
 
+        self.btn_aplicar_regiones = QPushButton("Aplicar regiones")
+        self.btn_aplicar_regiones.setObjectName("ActionButton")
+        self.btn_aplicar_regiones.setEnabled(False)
+        self.btn_aplicar_regiones.clicked.connect(lambda: self._procesar_etapa("regiones"))
+        bloque.addWidget(self.btn_aplicar_regiones)
+
         layout_principal.addWidget(tarjeta)
 
     def _actualizar_lbl_ruido(self, valor):
@@ -836,6 +939,9 @@ class VentanaPrincipal(QMainWindow):
 
     def _actualizar_lbl_d0_acentuado(self, valor):
         self.lbl_d0_acentuado_valor.setText(f"D0 {valor} px")
+
+    def _actualizar_lbl_factor_acentuado(self, valor):
+        self.lbl_factor_acentuado_valor.setText(f"A {valor / 10:.1f}")
 
     def _actualizar_opciones_kernel(self, maximo):
         if maximo % 2 == 0:
@@ -904,7 +1010,8 @@ class VentanaPrincipal(QMainWindow):
         self.combo_suavizado.setVisible(es_espacial)
         self.lbl_kernel.setVisible(es_espacial)
         self.sl_mascara.setVisible(es_espacial)
-        self.lbl_modo_suavizado.setVisible(not es_espacial)
+        self.lbl_frecuencia_suavizado.setVisible(not es_espacial)
+        self.combo_frecuencia_suavizado.setVisible(not es_espacial)
         self.lbl_d0_suavizado.setVisible(not es_espacial)
         self.lbl_d0_suavizado_valor.setVisible(not es_espacial)
         self.sl_d0_suavizado.setVisible(not es_espacial)
@@ -913,10 +1020,25 @@ class VentanaPrincipal(QMainWindow):
         es_espacial = dominio == "Espacial"
         self.lbl_acentuado.setVisible(es_espacial)
         self.combo_acentuado.setVisible(es_espacial)
-        self.lbl_modo_acentuado.setVisible(not es_espacial)
+        self.lbl_frecuencia_acentuado.setVisible(not es_espacial)
+        self.combo_frecuencia_acentuado.setVisible(not es_espacial)
         self.lbl_d0_acentuado.setVisible(not es_espacial)
         self.lbl_d0_acentuado_valor.setVisible(not es_espacial)
         self.sl_d0_acentuado.setVisible(not es_espacial)
+        self._actualizar_estado_factor_acentuado()
+
+    def _actualizar_estado_factor_acentuado(self):
+        if not hasattr(self, "combo_dominio_acentuado"):
+            return
+        es_frecuencia = self.combo_dominio_acentuado.currentText() == "Frecuencial"
+        usa_high_boost = (
+            self.combo_frecuencia_acentuado.currentText() == "High-Boost"
+            if es_frecuencia
+            else self.combo_acentuado.currentText() == "High-Boost"
+        )
+        self.lbl_factor_acentuado.setVisible(usa_high_boost)
+        self.lbl_factor_acentuado_valor.setVisible(usa_high_boost)
+        self.sl_factor_acentuado.setVisible(usa_high_boost)
 
     def _actualizar_resumen_flujo(self):
         if not hasattr(self, "lbl_flujo"):
@@ -937,21 +1059,197 @@ class VentanaPrincipal(QMainWindow):
         umbral = getattr(self, "sl_umbral", None)
         d0_suavizado = getattr(self, "sl_d0_suavizado", None)
         d0_acentuado = getattr(self, "sl_d0_acentuado", None)
+        freq_suavizado = getattr(self, "combo_frecuencia_suavizado", None)
+        freq_acentuado = getattr(self, "combo_frecuencia_acentuado", None)
+        factor = getattr(self, "sl_factor_acentuado", None)
         ruido_txt = f"{ruido.value()}%" if ruido else "0%"
         umbral_txt = str(umbral.value()) if umbral else "128"
         d0_suavizado_txt = str(d0_suavizado.value()) if d0_suavizado else "45"
         d0_acentuado_txt = str(d0_acentuado.value()) if d0_acentuado else "45"
         max_area_txt = str(max_area.value()) if max_area.value() > 0 else "sin límite"
+        suavizado_txt = suavizado.currentText()
+        if dominio_suavizado.currentText() == "Frecuencial":
+            suavizado_txt = f"{freq_suavizado.currentText()} D0 {d0_suavizado_txt}"
+        acentuado_txt = acentuado.currentText()
+        if dominio_acentuado.currentText() == "Frecuencial":
+            acentuado_txt = f"{freq_acentuado.currentText()} D0 {d0_acentuado_txt}"
+        if (
+            (dominio_acentuado.currentText() == "Espacial" and acentuado.currentText() == "High-Boost")
+            or (dominio_acentuado.currentText() == "Frecuencial" and freq_acentuado.currentText() == "High-Boost")
+        ):
+            acentuado_txt = f"{acentuado_txt} A {factor.value() / 10:.1f}"
 
         self.lbl_flujo.setText(
             "Activos: "
             f"R {ruido_txt} | "
-            f"S {dominio_suavizado.currentText()}/{suavizado.currentText() if dominio_suavizado.currentText() == 'Espacial' else f'D0 {d0_suavizado_txt}'} | "
-            f"A {dominio_acentuado.currentText()}/{acentuado.currentText() if dominio_acentuado.currentText() == 'Espacial' else f'D0 {d0_acentuado_txt}'} | "
+            f"S {dominio_suavizado.currentText()}/{suavizado_txt} | "
+            f"A {dominio_acentuado.currentText()}/{acentuado_txt} | "
             f"G {gradiente.currentText()} | "
             f"U {umbral_txt} | "
             f"Á {min_area.value()}-{max_area_txt}"
         )
+
+    def _botones_procesamiento(self):
+        botones = [self.btn_procesar]
+        for nombre in (
+            "btn_aplicar_pre",
+            "btn_aplicar_suavizado",
+            "btn_aplicar_acentuado",
+            "btn_aplicar_regiones",
+        ):
+            if hasattr(self, nombre):
+                botones.append(getattr(self, nombre))
+        return botones
+
+    def _set_procesando(self, procesando):
+        hay_imagen = self.img_rgb is not None
+        self.btn_cargar.setEnabled(not procesando)
+        self.btn_limpiar.setEnabled(not procesando)
+        for boton in self._botones_procesamiento():
+            boton.setEnabled(hay_imagen and not procesando)
+
+    def _parametros_actuales(self):
+        return ParametrosProcesamiento(
+            img_rgb=self.img_rgb.copy(),
+            ruido=self.sl_ruido.value() / 100.0,
+            mascara=self._kernel_actual(),
+            d0_suavizado=self.sl_d0_suavizado.value(),
+            d0_acentuado=self.sl_d0_acentuado.value(),
+            dominio_suavizado=self.combo_dominio_suavizado.currentText(),
+            tipo_suavizado=self.combo_suavizado.currentText(),
+            tipo_frecuencia_suavizado=self.combo_frecuencia_suavizado.currentText(),
+            dominio_acentuado=self.combo_dominio_acentuado.currentText(),
+            tipo_acentuado=self.combo_acentuado.currentText(),
+            tipo_frecuencia_acentuado=self.combo_frecuencia_acentuado.currentText(),
+            factor_high_boost=self.sl_factor_acentuado.value() / 10,
+            tipo_gradiente=self.combo_gradiente.currentText(),
+            umbral=self.sl_umbral.value(),
+            min_area=self.spin_min_area.value(),
+            max_area=self.spin_max_area.value(),
+        )
+
+    def _texto_suavizado(self, datos):
+        if datos["dominio_suavizado"] == "Frecuencial":
+            return f"{datos['tipo_frecuencia_suavizado']} D0={datos['d0_suavizado']}"
+        return datos["tipo_suavizado"]
+
+    def _texto_acentuado(self, datos):
+        if datos["dominio_acentuado"] == "Frecuencial":
+            texto = f"{datos['tipo_frecuencia_acentuado']} D0={datos['d0_acentuado']}"
+        else:
+            texto = datos["tipo_acentuado"]
+
+        if (
+            (datos["dominio_acentuado"] == "Espacial" and datos["tipo_acentuado"] == "High-Boost")
+            or (datos["dominio_acentuado"] == "Frecuencial" and datos["tipo_frecuencia_acentuado"] == "High-Boost")
+        ):
+            texto = f"{texto} A={datos['factor_high_boost']:.1f}"
+        return texto
+
+    def _limpiar_desde(self, etapa):
+        if etapa in ("preprocesamiento",):
+            self.canvas_suavizado.actualizar()
+            self.canvas_acentuado.actualizar()
+            self.canvas_binarizacion.actualizar()
+            self.canvas_gradiente.actualizar()
+            self.canvas_componentes_gradiente.actualizar()
+            self.canvas_regiones.actualizar()
+            self.canvas_recortes.actualizar()
+            self.lbl_regiones_info.setText("Aplica las siguientes etapas para actualizar regiones.")
+        elif etapa == "suavizado":
+            self.canvas_acentuado.actualizar()
+            self.canvas_binarizacion.actualizar()
+            self.canvas_gradiente.actualizar()
+            self.canvas_componentes_gradiente.actualizar()
+            self.canvas_regiones.actualizar()
+            self.canvas_recortes.actualizar()
+            self.lbl_regiones_info.setText("Aplica acentuado y regiones para continuar.")
+        elif etapa == "acentuado":
+            self.canvas_binarizacion.actualizar()
+            self.canvas_gradiente.actualizar()
+            self.canvas_componentes_gradiente.actualizar()
+            self.canvas_regiones.actualizar()
+            self.canvas_recortes.actualizar()
+            self.lbl_regiones_info.setText("Aplica regiones para detectar objetos.")
+
+    def _actualizar_vistas_parciales(self, etapa, datos):
+        self.datos_parciales = datos
+        self.canvas_preprocesamiento.actualizar(datos)
+
+        if etapa == "preprocesamiento":
+            self._limpiar_desde(etapa)
+            return
+
+        self.canvas_suavizado.actualizar_titulos(
+            [
+                f"Normalizada post-ruido ({datos['ruido_porcentaje']} %)",
+                f"Suavizado {datos['dominio_suavizado']} / {self._texto_suavizado(datos)}",
+            ]
+        )
+        self.canvas_suavizado.actualizar(datos)
+        if etapa == "suavizado":
+            self._limpiar_desde(etapa)
+            return
+
+        self.canvas_acentuado.actualizar_titulos(
+            [
+                "Base suavizada",
+                f"Acentuado {datos['dominio_acentuado']} / {self._texto_acentuado(datos)}",
+            ]
+        )
+        self.canvas_acentuado.actualizar(datos)
+        if etapa == "acentuado":
+            self._limpiar_desde(etapa)
+            return
+
+        self.canvas_binarizacion.actualizar_titulos(
+            [
+                f"Acentuado {datos['dominio_acentuado']}",
+                f"Máscara binaria (umbral={datos['umbral']})",
+            ]
+        )
+        self.canvas_binarizacion.actualizar(datos)
+        self.canvas_gradiente.actualizar_titulos(
+            [
+                f"Binarizada (umbral={datos['umbral']})",
+                f"Gradiente {datos['tipo_gradiente']}",
+                "Bordes binarios sin filtrar",
+            ]
+        )
+        self.canvas_gradiente.actualizar(datos)
+        componentes = datos["componentes_gradiente"]
+        self.canvas_componentes_gradiente.actualizar_titulos(componentes["titulos"])
+        self.canvas_componentes_gradiente.actualizar(
+            {
+                "comp_0": componentes["imagenes"][0],
+                "comp_1": componentes["imagenes"][1],
+                "comp_2": componentes["imagenes"][2],
+            }
+        )
+
+        n = datos["n_regiones"]
+        top3 = datos["regiones"][:3]
+        resumen_top = "  |  ".join(
+            f"R{r['label']}: {r['area']} px² / per={r['perimetro']}" for r in top3
+        )
+        texto_max = datos["max_area"] if datos["max_area"] > 0 else "sin límite"
+        self.lbl_regiones_info.setText(
+            f"Umbral: {datos['umbral']}  |  Área mín: {datos['min_area']} px²  |  Área máx: {texto_max}  |  "
+            f"Regiones encontradas: {n}    Top-3 por área → {resumen_top if top3 else 'ninguna'}"
+        )
+        self.canvas_regiones.actualizar_titulos(
+            [
+                f"Máscara filtrada ({datos['tipo_gradiente']})",
+                f"Bounding boxes ({n} regiones)",
+            ]
+        )
+        self.canvas_regiones.actualizar(datos)
+        self.canvas_recortes.actualizar_titulos(
+            [
+                f"Submatrices normalizadas para clasificación ({n} recortes)",
+            ]
+        )
+        self.canvas_recortes.actualizar(datos)
 
     def _mostrar_placeholders(self):
         self.canvas_preprocesamiento.actualizar()
@@ -992,7 +1290,7 @@ class VentanaPrincipal(QMainWindow):
             self._actualizar_opciones_area(alto, ancho)
             self._on_dominio_suavizado(self.combo_dominio_suavizado.currentText())
             self._on_dominio_acentuado(self.combo_dominio_acentuado.currentText())
-            self.btn_procesar.setEnabled(True)
+            self._set_procesando(False)
             self.lbl_estado.setText("Imagen lista. Ajusta parámetros y pulsa Aplicar.")
             self.canvas_preprocesamiento.actualizar({"original": self.img_rgb})
             self.canvas_suavizado.actualizar()
@@ -1004,6 +1302,7 @@ class VentanaPrincipal(QMainWindow):
             self.canvas_recortes.actualizar()
             self.lbl_regiones_info.setText("Sin datos.")
             self.ultimo_resultado = None
+            self.datos_parciales = {}
         except Exception as exc:
             self.lbl_estado.setText(f"Error al cargar la imagen: {exc}")
 
@@ -1014,6 +1313,7 @@ class VentanaPrincipal(QMainWindow):
         print("[ui] Limpiando resultados y reiniciando controles...")
         self.img_rgb = None
         self.ultimo_resultado = None
+        self.datos_parciales = {}
         self.lbl_path.setText("Ninguna imagen cargada")
         self.lbl_size.setText("")
         self.lbl_estado.setText("Carga una imagen para empezar.")
@@ -1026,13 +1326,16 @@ class VentanaPrincipal(QMainWindow):
         self.spin_max_area.setValue(0)
         self.combo_dominio_suavizado.setCurrentText("Espacial")
         self.combo_suavizado.setCurrentText("Media")
+        self.combo_frecuencia_suavizado.setCurrentText("Gaussiano")
         self.combo_dominio_acentuado.setCurrentText("Espacial")
-        self.combo_acentuado.setCurrentText("Sobel")
+        self.combo_acentuado.setCurrentText("Laplaciano")
+        self.combo_frecuencia_acentuado.setCurrentText("Gaussiano")
+        self.sl_factor_acentuado.setValue(20)
         self.combo_gradiente.setCurrentText("Sobel")
         self._on_dominio_suavizado(self.combo_dominio_suavizado.currentText())
         self._on_dominio_acentuado(self.combo_dominio_acentuado.currentText())
 
-        self.btn_procesar.setEnabled(False)
+        self._set_procesando(False)
         self._mostrar_placeholders()
         self._actualizar_resumen_flujo()
 
@@ -1041,51 +1344,72 @@ class VentanaPrincipal(QMainWindow):
             return
 
         print("[ui] Lanzando procesamiento desde la interfaz...")
-        self.btn_procesar.setEnabled(False)
-        self.btn_cargar.setEnabled(False)
-        self.btn_limpiar.setEnabled(False)
+        self._set_procesando(True)
         self.lbl_estado.setText("Aplicando el pipeline seleccionado...")
-        parametros = ParametrosProcesamiento(
-            img_rgb=self.img_rgb.copy(),
-            ruido=self.sl_ruido.value() / 100.0,
-            mascara=self._kernel_actual(),
-            d0_suavizado=self.sl_d0_suavizado.value(),
-            d0_acentuado=self.sl_d0_acentuado.value(),
-            dominio_suavizado=self.combo_dominio_suavizado.currentText(),
-            tipo_suavizado=self.combo_suavizado.currentText(),
-            dominio_acentuado=self.combo_dominio_acentuado.currentText(),
-            tipo_acentuado=self.combo_acentuado.currentText(),
-            tipo_gradiente=self.combo_gradiente.currentText(),
-            umbral=self.sl_umbral.value(),
-            min_area=self.spin_min_area.value(),
-            max_area=self.spin_max_area.value(),
-        )
+        parametros = self._parametros_actuales()
 
         self.worker = WorkerProcesoCompleto(parametros)
         self.worker.terminado.connect(self._on_proceso_listo)
         self.worker.error.connect(self._on_error)
         self.worker.start()
 
+    def _procesar_etapa(self, etapa):
+        if self.img_rgb is None:
+            return
+
+        nombres = {
+            "preprocesamiento": "escala de grises",
+            "suavizado": "suavizado",
+            "acentuado": "acentuado",
+            "regiones": "detección de regiones",
+        }
+        print(f"[ui] Aplicando etapa: {etapa}...")
+        self._set_procesando(True)
+        self.lbl_estado.setText(f"Aplicando {nombres.get(etapa, etapa)}...")
+
+        self.worker = WorkerProcesoEtapa(self._parametros_actuales(), etapa)
+        self.worker.terminado.connect(self._on_etapa_lista)
+        self.worker.error.connect(self._on_error)
+        self.worker.start()
+
+    def _on_etapa_lista(self, etapa, datos):
+        self._actualizar_vistas_parciales(etapa, datos)
+        self.lbl_estado.setText(f"Etapa actualizada: {etapa}.")
+        self._set_procesando(False)
+        self.worker = None
+        print(f"[ui] Etapa lista: {etapa}.")
+
     def _on_proceso_listo(self, resultado):
         print("[ui] Actualizando paneles con los resultados...")
         self.ultimo_resultado = resultado
         datos = resultado.a_diccionario()
+        self.datos_parciales = datos
         self.canvas_preprocesamiento.actualizar(datos)
 
-        filtro = resultado.tipo_suavizado
-        mascara = resultado.mascara
+        filtro_suavizado = resultado.tipo_suavizado
+        if resultado.dominio_suavizado == "Frecuencial":
+            filtro_suavizado = f"{resultado.tipo_frecuencia_suavizado} D0={resultado.d0_suavizado}"
+
+        filtro_acentuado = resultado.tipo_acentuado
+        if resultado.dominio_acentuado == "Frecuencial":
+            filtro_acentuado = f"{resultado.tipo_frecuencia_acentuado} D0={resultado.d0_acentuado}"
+        if (
+            (resultado.dominio_acentuado == "Espacial" and resultado.tipo_acentuado == "High-Boost")
+            or (resultado.dominio_acentuado == "Frecuencial" and resultado.tipo_frecuencia_acentuado == "High-Boost")
+        ):
+            filtro_acentuado = f"{filtro_acentuado} A={resultado.factor_high_boost:.1f}"
 
         self.canvas_suavizado.actualizar_titulos(
             [
-                f"Ruido sal y pimienta ({resultado.ruido_porcentaje} %)",
-                f"Suavizado {resultado.dominio_suavizado} / {filtro if resultado.dominio_suavizado == 'Espacial' else f'D0={resultado.d0_suavizado}'}",
+                f"Normalizada post-ruido ({resultado.ruido_porcentaje} %)",
+                f"Suavizado {resultado.dominio_suavizado} / {filtro_suavizado}",
             ]
         )
         self.canvas_suavizado.actualizar(datos)
         self.canvas_acentuado.actualizar_titulos(
             [
                 "Base suavizada",
-                f"Acentuado {resultado.dominio_acentuado} / {resultado.tipo_acentuado if resultado.dominio_acentuado == 'Espacial' else f'D0={resultado.d0_acentuado}'}",
+                f"Acentuado {resultado.dominio_acentuado} / {filtro_acentuado}",
             ]
         )
         self.canvas_acentuado.actualizar(datos)
@@ -1148,15 +1472,12 @@ class VentanaPrincipal(QMainWindow):
             f"Regiones: {n}."
         )
         self.btn_procesar.setEnabled(True)
-        self.btn_cargar.setEnabled(True)
-        self.btn_limpiar.setEnabled(True)
+        self._set_procesando(False)
         self.worker = None
         print("[ui] Interfaz lista para otra prueba.")
 
     def _on_error(self, mensaje):
         print(f"[ui] Se mostro un error en pantalla: {mensaje}")
         self.lbl_estado.setText(f"Error durante el proceso: {mensaje}")
-        self.btn_procesar.setEnabled(self.img_rgb is not None)
-        self.btn_cargar.setEnabled(True)
-        self.btn_limpiar.setEnabled(True)
+        self._set_procesando(False)
         self.worker = None

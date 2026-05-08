@@ -45,11 +45,11 @@ class ModeloImagen:
     def filtro_moda(self, imagen, tamano_mascara):
         return filtro_moda(imagen, tamano_mascara)
 
-    def filtro_frecuencia_gaussiano(self, imagen, d0):
-        return filtro_frecuencia_gaussiano(imagen, d0)
+    def filtro_frecuencia_gaussiano(self, imagen, d0, tipo="Gaussiano"):
+        return filtro_frecuencia_gaussiano(imagen, d0, tipo)
 
-    def diagnostico_frecuencia(self, imagen, d0):
-        return diagnostico_frecuencia(imagen, d0)
+    def diagnostico_frecuencia(self, imagen, d0, tipo="Gaussiano"):
+        return diagnostico_frecuencia(imagen, d0, tipo)
 
     def diferencia_absoluta_manual(self, imagen_a, imagen_b):
         return diferencia_absoluta_manual(imagen_a, imagen_b)
@@ -66,17 +66,23 @@ class ModeloImagen:
     def filtro_laplaciano(self, imagen):
         return filtro_laplaciano(imagen)
 
+    def filtro_pasa_alto(self, imagen):
+        return filtro_pasa_alto(imagen)
+
+    def filtro_high_boost(self, imagen, factor):
+        return filtro_high_boost(imagen, factor)
+
     def gradientes_bordes(self, imagen):
         return gradientes_bordes(imagen)
 
     def diagnostico_gradiente(self, imagen, operador):
         return diagnostico_gradiente(imagen, operador)
 
-    def filtro_frecuencia_pasaaltas(self, imagen, d0):
-        return filtro_frecuencia_pasaaltas(imagen, d0)
+    def filtro_frecuencia_pasaaltas(self, imagen, d0, tipo="Gaussiano", factor=2.0):
+        return filtro_frecuencia_pasaaltas(imagen, d0, tipo, factor)
 
-    def diagnostico_pasaaltas(self, imagen, d0):
-        return diagnostico_pasaaltas(imagen, d0)
+    def diagnostico_pasaaltas(self, imagen, d0, tipo="Gaussiano", factor=2.0):
+        return diagnostico_pasaaltas(imagen, d0, tipo, factor)
 
     def binarizar_imagen(self, imagen_gris, umbral):
         return binarizar_imagen(imagen_gris, umbral)
@@ -414,6 +420,66 @@ def crear_filtro_gaussiano(altura, ancho, d0):
     return filtro
 
 
+def crear_filtro_ideal(altura, ancho, d0):
+    """Máscara pasabajas ideal: deja pasar solo lo cercano al centro."""
+    if d0 <= 0:
+        d0 = 1.0
+
+    cy = altura // 2
+    cx = ancho // 2
+    filtro = np.zeros((altura, ancho), dtype=np.float64)
+
+    for fila in range(altura):
+        for columna in range(ancho):
+            distancia = math.sqrt((fila - cy) ** 2 + (columna - cx) ** 2)
+            filtro[fila, columna] = 1.0 if distancia <= d0 else 0.0
+
+    return filtro
+
+
+def crear_filtro_butterworth(altura, ancho, d0, orden=2):
+    """Máscara pasabajas Butterworth, más suave que la ideal."""
+    if d0 <= 0:
+        d0 = 1.0
+
+    cy = altura // 2
+    cx = ancho // 2
+    filtro = np.zeros((altura, ancho), dtype=np.float64)
+
+    for fila in range(altura):
+        for columna in range(ancho):
+            distancia = math.sqrt((fila - cy) ** 2 + (columna - cx) ** 2)
+            filtro[fila, columna] = 1.0 / (1.0 + (distancia / d0) ** (2 * orden))
+
+    return filtro
+
+
+def crear_mascara_frecuencia(altura, ancho, d0, tipo="Gaussiano", modo="pasa-bajas", factor=2.0):
+    """Construye pasabajas, pasa-altas o high-boost desde la misma base."""
+    if factor < 1.0:
+        factor = 1.0
+
+    if tipo == "Ideal":
+        pasabajas = crear_filtro_ideal(altura, ancho, d0)
+    elif tipo == "Butterworth":
+        pasabajas = crear_filtro_butterworth(altura, ancho, d0)
+    else:
+        pasabajas = crear_filtro_gaussiano(altura, ancho, d0)
+
+    if modo == "pasa-bajas":
+        return pasabajas
+
+    mascara = np.zeros((altura, ancho), dtype=np.float64)
+    for fila in range(altura):
+        for columna in range(ancho):
+            if modo == "high-boost":
+                mascara[fila, columna] = factor - pasabajas[fila, columna]
+            else:
+                mascara[fila, columna] = 1.0 - pasabajas[fila, columna]
+
+    return mascara
+
+
 def aplicar_filtro_frecuencia(espectro, filtro):
     """Multiplica el espectro complejo por la máscara usando loops."""
     alto, ancho = espectro.shape
@@ -496,32 +562,37 @@ def parte_real_manual(matriz_compleja):
     return resultado
 
 
-def filtrar_frecuencia_matriz(imagen, d0):
-    """Aplica el filtrado gaussiano a una matriz 2D y devuelve también sus diagnósticos."""
+def filtrar_frecuencia_matriz(imagen, d0, tipo="Gaussiano", modo="pasa-bajas", factor=2.0):
+    """Aplica una máscara de frecuencia a una matriz 2D y devuelve diagnósticos."""
     alto, ancho = imagen.shape
     espectro = np.fft.fft2(imagen.astype(np.float64))
     espectro_centrado = np.fft.fftshift(espectro)
-    mascara = crear_filtro_gaussiano(alto, ancho, d0)
+    mascara = crear_mascara_frecuencia(alto, ancho, d0, tipo, modo, factor)
     espectro_filtrado = aplicar_filtro_frecuencia(espectro_centrado, mascara)
     reconstruida = np.fft.ifft2(np.fft.ifftshift(espectro_filtrado))
-    resultado = normalizar_matriz_uint8(parte_real_manual(reconstruida))
+    respuesta_real = parte_real_manual(reconstruida)
+    if modo == "pasa-altas":
+        # En bordes importa la magnitud: el signo solo indica dirección del cambio.
+        resultado = normalizar_matriz_uint8(matriz_absoluta_manual(respuesta_real))
+    else:
+        resultado = normalizar_matriz_uint8(respuesta_real)
     return resultado, espectro_centrado, espectro_filtrado, mascara
 
 
-def fourier_filtrar_canal(imagen, d0):
-    """Aplica filtrado gaussiano pasabajas a un canal."""
-    resultado, _, _, _ = filtrar_frecuencia_matriz(imagen, d0)
+def fourier_filtrar_canal(imagen, d0, tipo="Gaussiano", modo="pasa-bajas", factor=2.0):
+    """Aplica filtrado en frecuencia a un canal."""
+    resultado, _, _, _ = filtrar_frecuencia_matriz(imagen, d0, tipo, modo, factor)
     return resultado
 
 
-def filtro_frecuencia_gaussiano(imagen, d0):
+def filtro_frecuencia_gaussiano(imagen, d0, tipo="Gaussiano"):
     """Aplica el filtro de frecuencia a una imagen en gris o RGB."""
     # El filtrado usa FFT de NumPy, pero la mascara se construye en este modulo.
-    print(f"[modelo] Aplicando filtro gaussiano en frecuencia con D0={d0}...")
-    return aplicar_por_canal(imagen, lambda canal: fourier_filtrar_canal(canal, d0))
+    print(f"[modelo] Aplicando suavizado {tipo} en frecuencia con D0={d0}...")
+    return aplicar_por_canal(imagen, lambda canal: fourier_filtrar_canal(canal, d0, tipo))
 
 
-def diagnostico_frecuencia(imagen, d0):
+def diagnostico_frecuencia(imagen, d0, tipo="Gaussiano"):
     """Genera imágenes de apoyo para la pestaña de frecuencia."""
     print("[modelo] Armando diagnostico de frecuencia...")
     if imagen.ndim == 3:
@@ -529,7 +600,9 @@ def diagnostico_frecuencia(imagen, d0):
     else:
         base = imagen
 
-    resultado, espectro_original, espectro_filtrado, mascara = filtrar_frecuencia_matriz(base, d0)
+    resultado, espectro_original, espectro_filtrado, mascara = filtrar_frecuencia_matriz(
+        base, d0, tipo
+    )
     return {
         "base_gris": base,
         "resultado_gris": resultado,
@@ -685,7 +758,7 @@ def _laplaciano_puro(imagen):
                 for mc in range(3):
                     acumulador += int(imagen[fila - 1 + mf, columna - 1 + mc]) * kernel[mf][mc]
             buffer[fila, columna] = acumulador
-    return normalizar_matriz_uint8(buffer)
+    return normalizar_matriz_uint8(matriz_absoluta_manual(buffer))
 
 
 def filtro_roberts(imagen):
@@ -848,6 +921,69 @@ def filtro_laplaciano(imagen):
             elif valor > 255:
                 valor = 255
             resultado[fila, columna] = valor
+
+    for fila in range(alto):
+        resultado[fila, 0] = imagen[fila, 0]
+        resultado[fila, ancho - 1] = imagen[fila, ancho - 1]
+    for columna in range(ancho):
+        resultado[0, columna] = imagen[0, columna]
+        resultado[alto - 1, columna] = imagen[alto - 1, columna]
+
+    return resultado
+
+
+def filtro_pasa_alto(imagen):
+    """Devuelve la respuesta pasa-alto pura para resaltar cambios bruscos."""
+    print("[modelo] Aplicando pasa-alto espacial...")
+    if imagen.ndim == 3:
+        imagen = convertir_a_grises(imagen)
+
+    alto, ancho = imagen.shape
+    kernel = [[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]]
+    respuesta = np.zeros((alto, ancho), dtype=np.float64)
+
+    for fila in range(1, alto - 1):
+        for columna in range(1, ancho - 1):
+            acumulador = 0.0
+            for mf in range(3):
+                for mc in range(3):
+                    pixel = int(imagen[fila - 1 + mf, columna - 1 + mc])
+                    acumulador += pixel * kernel[mf][mc]
+            respuesta[fila, columna] = acumulador
+
+    return normalizar_matriz_uint8(matriz_absoluta_manual(respuesta))
+
+
+def filtro_high_boost(imagen, factor=2.0):
+    """
+    Realce high-boost basado en Laplaciano: f + k*L(f).
+    factor=1 deja la imagen igual; factor=2 equivale a f + L(f).
+    """
+    print(f"[modelo] Aplicando high-boost espacial con A={factor:.1f}...")
+    if imagen.ndim == 3:
+        imagen = convertir_a_grises(imagen)
+
+    if factor < 1.0:
+        factor = 1.0
+
+    alto, ancho = imagen.shape
+    kernel = [[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]]
+    resultado = np.zeros((alto, ancho), dtype=np.uint8)
+
+    for fila in range(1, alto - 1):
+        for columna in range(1, ancho - 1):
+            laplaciano = 0.0
+            for mf in range(3):
+                for mc in range(3):
+                    pixel = int(imagen[fila - 1 + mf, columna - 1 + mc])
+                    laplaciano += pixel * kernel[mf][mc]
+
+            valor = int(imagen[fila, columna]) + (factor - 1.0) * laplaciano
+            if valor < 0:
+                valor = 0
+            elif valor > 255:
+                valor = 255
+            resultado[fila, columna] = int(valor)
 
     for fila in range(alto):
         resultado[fila, 0] = imagen[fila, 0]
@@ -1042,30 +1178,22 @@ def _componentes_laplaciano(imagen):
     )
 
 
-def filtro_frecuencia_pasaaltas(imagen, d0):
+def filtro_frecuencia_pasaaltas(imagen, d0, tipo="Gaussiano", factor=2.0):
     """
-    Filtro gaussiano pasa-altas en dominio de frecuencia.
-    Mascara H_pa = 1 - H_pb(D0)  =>  atenua bajas frecuencias, realza bordes.
+    Filtro pasa-altas en frecuencia.
+    High-Boost usa A - H_pb para realzar sin eliminar totalmente la base.
     """
-    print(f"[modelo] Aplicando filtro gaussiano pasa-altas en frecuencia con D0={d0}...")
+    modo = "high-boost" if tipo == "High-Boost" else "pasa-altas"
+    tipo_mascara = "Gaussiano" if tipo == "High-Boost" else tipo
+    print(f"[modelo] Aplicando {tipo} en frecuencia con D0={d0}...")
 
     def _canal_pasaaltas(canal):
-        alto, ancho = canal.shape
-        espectro = np.fft.fft2(canal.astype(np.float64))
-        espectro_centrado = np.fft.fftshift(espectro)
-        mascara_pb = crear_filtro_gaussiano(alto, ancho, d0)
-        mascara_pa = np.zeros((alto, ancho), dtype=np.float64)
-        for fila in range(alto):
-            for columna in range(ancho):
-                mascara_pa[fila, columna] = 1.0 - mascara_pb[fila, columna]
-        espectro_filtrado = aplicar_filtro_frecuencia(espectro_centrado, mascara_pa)
-        reconstruida = np.fft.ifft2(np.fft.ifftshift(espectro_filtrado))
-        return normalizar_matriz_uint8(parte_real_manual(reconstruida))
+        return fourier_filtrar_canal(canal, d0, tipo_mascara, modo, factor)
 
     return aplicar_por_canal(imagen, _canal_pasaaltas)
 
 
-def diagnostico_pasaaltas(imagen, d0):
+def diagnostico_pasaaltas(imagen, d0, tipo="Gaussiano", factor=2.0):
     """Genera imagenes de apoyo para la pestana pasa-altas en frecuencia."""
     print("[modelo] Armando diagnostico pasa-altas...")
     if imagen.ndim == 3:
@@ -1073,17 +1201,11 @@ def diagnostico_pasaaltas(imagen, d0):
     else:
         base = imagen
 
-    alto, ancho = base.shape
-    espectro = np.fft.fft2(base.astype(np.float64))
-    espectro_centrado = np.fft.fftshift(espectro)
-    mascara_pb = crear_filtro_gaussiano(alto, ancho, d0)
-    mascara_pa = np.zeros((alto, ancho), dtype=np.float64)
-    for fila in range(alto):
-        for columna in range(ancho):
-            mascara_pa[fila, columna] = 1.0 - mascara_pb[fila, columna]
-    espectro_filtrado = aplicar_filtro_frecuencia(espectro_centrado, mascara_pa)
-    reconstruida = np.fft.ifft2(np.fft.ifftshift(espectro_filtrado))
-    resultado = normalizar_matriz_uint8(parte_real_manual(reconstruida))
+    modo = "high-boost" if tipo == "High-Boost" else "pasa-altas"
+    tipo_mascara = "Gaussiano" if tipo == "High-Boost" else tipo
+    resultado, espectro_centrado, espectro_filtrado, mascara_pa = filtrar_frecuencia_matriz(
+        base, d0, tipo_mascara, modo, factor
+    )
 
     return {
         "espectro_original_pa": espectro_log(espectro_centrado),
@@ -1306,14 +1428,14 @@ def seleccionar_regiones_mas_relevantes(regiones, limite):
 
 
 def ordenar_regiones_lectura(regiones):
-    """Ordena de arriba hacia abajo y de izquierda a derecha."""
+    """Ordena caracteres de placa de izquierda a derecha."""
     for i in range(1, len(regiones)):
         actual = regiones[i]
         posicion = i - 1
         fila_actual, col_actual = actual["bbox"][0], actual["bbox"][1]
         while posicion >= 0:
             fila_prev, col_prev = regiones[posicion]["bbox"][0], regiones[posicion]["bbox"][1]
-            if fila_prev < fila_actual or (fila_prev == fila_actual and col_prev <= col_actual):
+            if col_prev < col_actual or (col_prev == col_actual and fila_prev <= fila_actual):
                 break
             regiones[posicion + 1] = regiones[posicion]
             posicion -= 1
