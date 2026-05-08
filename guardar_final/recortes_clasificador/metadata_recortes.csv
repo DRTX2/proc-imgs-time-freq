@@ -1,0 +1,8 @@
+indice,id_region,area,perimetro,fila_min,col_min,fila_max,col_max,archivo
+1,18,3215,1626,422,323,674,473,recorte_001_region_18.png
+2,19,3396,1684,422,497,675,649,recorte_002_region_19.png
+3,20,3178,1610,422,671,674,822,recorte_003_region_20.png
+4,21,2623,1455,422,950,675,1036,recorte_004_region_21.png
+5,16,4212,2106,419,1079,674,1218,recorte_005_region_16.png
+6,17,4506,2142,419,1252,680,1393,recorte_006_region_17.png
+7,22,4138,2043,422,1437,680,1592,recorte_007_region_22.png

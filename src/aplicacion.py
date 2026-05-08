@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
-import modelo
+from src import modelo
 
 
 @dataclass(frozen=True)
@@ -56,6 +56,8 @@ class ResultadoProcesamiento:
     binaria: Any
     bboxes: Any
     recortes_tira: Any
+    recortes_clasificador: list[dict[str, Any]]
+    entradas_red_neuronal: list[dict[str, Any]]
     n_regiones: int
     regiones: list[dict[str, Any]]
     umbral: int
@@ -75,7 +77,7 @@ class ResultadoProcesamiento:
     ruido_porcentaje: int
 
     def a_diccionario(self):
-        """Mantiene compatibilidad con la capa de visualización actual."""
+        """Entrega las salidas con nombres directos para pintarlas o exportarlas."""
         return {
             "original": self.original,
             "gris": self.gris,
@@ -103,6 +105,8 @@ class ResultadoProcesamiento:
             "binaria": self.binaria,
             "bboxes": self.bboxes,
             "recortes_tira": self.recortes_tira,
+            "recortes_clasificador": self.recortes_clasificador,
+            "entradas_red_neuronal": self.entradas_red_neuronal,
             "n_regiones": self.n_regiones,
             "regiones": self.regiones,
             "umbral": self.umbral,
@@ -124,13 +128,13 @@ class ResultadoProcesamiento:
 
 
 class ProcesadorImagen:
-    """Orquesta el pipeline completo usando las funciones de `modelo.py`."""
+    """Orquesta el recorrido completo: preparación, filtros, bordes y regiones."""
 
     def __init__(self, modelo_algoritmos=None):
         self.modelo = modelo_algoritmos or modelo.modelo_imagen
 
     def ejecutar_hasta(self, parametros: ParametrosProcesamiento, etapa: str):
-        """Procesa solo hasta la etapa pedida para que la UI no recalculé todo."""
+        """Procesa solo hasta la etapa pedida para que la UI no recalcule todo."""
         print(f"[pipeline] Procesando hasta: {etapa}...")
 
         img_gris = self.modelo.convertir_a_grises(parametros.img_rgb)
@@ -247,10 +251,16 @@ class ProcesadorImagen:
             ancho_mascara,
             max_area,
         )
+        recortes_clasificador = self.modelo.extraer_recortes_normalizados(
+            mascara_regiones,
+            regiones,
+        )
         datos.update({
             "binaria": mascara_regiones,
             "bboxes": self.modelo.dibujar_bounding_boxes_sobre_imagen(parametros.img_rgb, regiones),
             "recortes_tira": self.modelo.componer_tira_recortes(mascara_regiones, regiones),
+            "recortes_clasificador": recortes_clasificador,
+            "entradas_red_neuronal": self.modelo.preparar_entrada_red_neuronal(recortes_clasificador),
             "n_regiones": len(regiones),
             "regiones": regiones,
         })
@@ -288,6 +298,8 @@ class ProcesadorImagen:
             binaria=datos["binaria"],
             bboxes=datos["bboxes"],
             recortes_tira=datos["recortes_tira"],
+            recortes_clasificador=datos["recortes_clasificador"],
+            entradas_red_neuronal=datos["entradas_red_neuronal"],
             n_regiones=datos["n_regiones"],
             regiones=datos["regiones"],
             umbral=datos["umbral"],

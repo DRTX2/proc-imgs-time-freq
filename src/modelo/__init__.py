@@ -1,0 +1,72 @@
+"""Operaciones de procesamiento digital de imágenes."""
+
+from .base import (
+    cargar_imagen,
+    convertir_a_grises,
+    normalizar_histograma_grises,
+    calcular_histograma_grises,
+    calcular_tamano_mascara_maximo,
+    agregar_ruido_sal_pimienta,
+    _aplicar_ruido,
+)
+from .suavizado import (
+    crear_mascara_media,
+    convolucionar_manual_grises,
+    filtro_media,
+    filtro_mediana,
+    filtro_moda,
+    filtro_mediana_grises,
+    filtro_moda_grises,
+)
+from .frecuencia import (
+    crear_filtro_gaussiano,
+    crear_filtro_ideal,
+    crear_filtro_butterworth,
+    crear_mascara_frecuencia,
+    aplicar_filtro_frecuencia,
+    espectro_log,
+    filtrar_frecuencia_matriz,
+    fourier_filtrar_canal,
+    filtro_frecuencia_gaussiano,
+    diagnostico_frecuencia,
+    filtro_frecuencia_pasaaltas,
+    diagnostico_pasaaltas,
+)
+from .gradientes import (
+    diferencia_absoluta_manual,
+    filtro_roberts,
+    filtro_prewitt,
+    filtro_sobel,
+    filtro_laplaciano,
+    filtro_pasa_alto,
+    filtro_high_boost,
+    gradientes_bordes,
+    diagnostico_gradiente,
+    _gradiente_roberts_puro,
+    _gradiente_prewitt_puro,
+    _gradiente_sobel_puro,
+    _gradiente_kirsch_puro,
+    _laplaciano_puro,
+    _componentes_roberts,
+    _componentes_prewitt,
+    _componentes_sobel,
+    _kernels_kirsch,
+    _componentes_kirsch,
+    _componentes_laplaciano,
+)
+from .regiones import (
+    binarizar_imagen,
+    etiquetar_regiones_bfs,
+    limpiar_mascara_regiones,
+    filtrar_regiones_utiles,
+    seleccionar_regiones_mas_relevantes,
+    ordenar_regiones_lectura,
+    dibujar_bounding_boxes,
+    dibujar_bounding_boxes_sobre_imagen,
+    extraer_recorte_gris,
+    redimensionar_vecino_mas_cercano,
+    extraer_recortes_normalizados,
+    preparar_entrada_red_neuronal,
+    componer_tira_recortes,
+)
+from .fachada import ModeloImagen, modelo_imagen

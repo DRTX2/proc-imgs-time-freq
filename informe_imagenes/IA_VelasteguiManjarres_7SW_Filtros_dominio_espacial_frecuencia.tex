@@ -31,6 +31,14 @@
     }
 }
 
+\newcommand{\imgopendiente}[3]{
+    \IfFileExists{#1}{
+        \includegraphics[#2]{#1}
+    }{
+        \figpendiente{#3}{Imagen esperada: \texttt{#1}.}
+    }
+}
+
 \pagestyle{fancy}
 \fancyhf{}
 \setlength{\headheight}{63pt}
@@ -110,7 +118,7 @@
 \subsection{Instrucciones}
 \begin{enumerate}
     \item Cargar una imagen desde la interfaz gráfica.
-    \item Ajustar el porcentaje de ruido Sal y Pimienta para simular degradación impulsiva.
+    \item Ajustar el porcentaje de ruido sal y pimienta para simular degradación impulsiva.
     \item Seleccionar el filtro de suavizado, su dominio de trabajo y el tamaño de máscara o frecuencia de corte $D_0$.
     \item Seleccionar el tipo de acentuado espacial o frecuencial que resaltará bordes antes de la binarización.
     \item Definir el umbral de binarización, el operador de gradiente y los rangos de área para la detección de regiones.
@@ -144,8 +152,8 @@ Otros (Especifique): \underline{\hspace{5cm}}
 
 \subsection{Actividades por desarrollar}
 \begin{enumerate}
-    \item Diseñar una arquitectura de software dividida en interfaz (\texttt{interfaz.py}) y lógica algorítmica (\texttt{modelo.py}).
-    \item Programar el flujo de conversión a grises y normalización de histograma con recorridos manuales.
+    \item Diseñar una arquitectura de software organizada en \texttt{src/modelo}, \texttt{src/ui} y \texttt{src/aplicacion.py}.
+    \item Programar el flujo de conversión a grises, ruido sal y pimienta y normalización de histograma con recorridos manuales.
     \item Construir los bucles anidados para la convolución discreta en $2D$ garantizando el \textit{padding}.
     \item Implementar la inserción secuencial (\textit{Insertion Sort}) para el filtro de mediana, y diccionarios para contar frecuencias en el filtro de moda, evadiendo funciones preconstruidas.
     \item Implementar operadores de acentuado y gradiente con máscaras manuales, incluyendo componentes direccionales.
@@ -155,13 +163,13 @@ Otros (Especifique): \underline{\hspace{5cm}}
 
 \subsection{Resultados obtenidos}
 
-El sistema desarrollado no se limita a aplicar un filtro aislado. La aplicación propone una cadena completa de procesamiento: conversión a escala de grises, normalización, inserción controlada de ruido, suavizado, acentuado, binarización, gradiente, limpieza de máscara, detección de regiones y extracción de submatrices. Este orden permite observar cómo una decisión temprana, como el tipo de suavizado, modifica directamente el comportamiento del \textit{bounding box} final.
+El sistema desarrollado no se limita a aplicar un filtro aislado. La aplicación propone una cadena completa de procesamiento: conversión a escala de grises, inserción controlada de ruido, normalización, suavizado, acentuado, binarización, gradiente, limpieza de máscara, detección de regiones y extracción de submatrices. Este orden refleja el flujo real del código: primero se observa la imagen degradada, luego se normaliza y recién después se aplican los filtros que condicionan el \textit{bounding box} final.
 
 El criterio de implementación fue mantener los algoritmos principales visibles en el código. NumPy se utilizó como contenedor de matrices y para la FFT, mientras que las operaciones centrales de la práctica se resolvieron con recorridos explícitos: conteo de histograma, convolución, ordenamiento de mediana, moda, binarización, gradientes, BFS y redimensionamiento de submatrices.
 
 \subsubsection{Flujo general del sistema}
 
-La Figura \ref{fig:flujo_general} resume el recorrido de una placa dentro del sistema. La imagen se normaliza y degrada con ruido sal y pimienta para probar la robustez de los filtros. Luego se suaviza, se acentúa, se binariza y se somete a un operador de gradiente. Finalmente, el mapa de bordes se limpia antes de buscar regiones conexas y generar submatrices normalizadas.
+La Figura \ref{fig:flujo_general} resume el recorrido de una placa dentro del sistema. La imagen se convierte a grises, se degrada con ruido sal y pimienta y luego se normaliza para probar la robustez de los filtros. Después se suaviza, se acentúa, se binariza y se somete a un operador de gradiente. Finalmente, el mapa de bordes se limpia antes de buscar regiones conexas y generar submatrices normalizadas.
 
 \begin{figure}[H]
     \centering
@@ -171,9 +179,9 @@ La Figura \ref{fig:flujo_general} resume el recorrido de una placa dentro del si
         flecha/.style={-{Latex[length=2mm]}, thick}
     ]
         \node[etapa] (a) {Imagen\\original};
-        \node[etapa, right=of a] (b) {Grises +\\normalización};
-        \node[etapa, right=of b] (c) {Ruido +\\suavizado};
-        \node[etapa, below=of c] (d) {Acentuado};
+        \node[etapa, right=of a] (b) {Escala\\de grises};
+        \node[etapa, right=of b] (c) {Ruido +\\normalización};
+        \node[etapa, below=of c] (d) {Suavizado +\\acentuado};
         \node[etapa, left=of d] (e) {Binarización};
         \node[etapa, left=of e] (f) {Gradiente};
         \node[etapa, below=of f] (g) {Limpieza\\de máscara};
@@ -194,7 +202,37 @@ La Figura \ref{fig:flujo_general} resume el recorrido de una placa dentro del si
     {\footnotesize Fuente: Elaboración propia.}
 \end{figure}
 
-\subsubsection{Preprocesamiento: escala de grises y normalización}
+\subsubsection{Parámetros ajustables y procesamiento por etapas}
+
+La aplicación no recalcula todo el flujo cada vez que se modifica un control. Para mantener la interfaz fluida, el usuario puede aplicar el procesamiento por etapas: escala, suavizado, acentuado y regiones. Internamente, el pipeline procesa solamente hasta la etapa solicitada y reutiliza la misma estructura de parámetros.
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{|p{3.2cm}|p{4.4cm}|p{6.8cm}|}
+        \hline
+        \textbf{Parámetro} & \textbf{Rango u opciones} & \textbf{Impacto en el resultado} \\
+        \hline
+        Ruido & 0\% a 100\% & Simula degradación sal y pimienta antes de normalizar. \\
+        \hline
+        Máscara espacial & Tamaños impares desde $3 \times 3$ hasta un máximo seguro & Controla la vecindad usada por media, mediana o moda. \\
+        \hline
+        $D_0$ de suavizado & Radio de corte ajustable & Regula cuánto detalle conserva el pasa-bajas frecuencial. \\
+        \hline
+        $D_0$ de acentuado & Radio independiente del suavizado & Regula el pasa-altas frecuencial sin afectar el suavizado. \\
+        \hline
+        Factor $A$ & 1.0 a 5.0 & Aumenta o reduce la fuerza del High-Boost. \\
+        \hline
+        Umbral & 0 a 255 & Decide qué píxeles pasan a blanco en la binarización. \\
+        \hline
+        Área mínima y máxima & En píxeles; máximo 0 significa sin límite & Filtra componentes demasiado pequeños o demasiado grandes. \\
+        \hline
+    \end{tabular}
+    \caption{Parámetros principales expuestos por la interfaz y su efecto dentro del pipeline.}
+    \label{tab:parametros_interfaz}
+\end{table}
+
+\subsubsection{Preprocesamiento: escala de grises, ruido y normalización}
 
 La conversión a escala de grises se implementó con la ponderación perceptiva BT.601:
 
@@ -202,18 +240,18 @@ La conversión a escala de grises se implementó con la ponderación perceptiva 
     I_{gris}(x,y)=0.299R+0.587G+0.114B
 \end{equation}
 
-Posteriormente se aplicó ecualización de histograma mediante el cálculo manual de frecuencias y de la función de distribución acumulada. Esta etapa ayuda a que placas con iluminación irregular tengan un contraste más aprovechable antes de binarizar.
+En la aplicación actual, el ruido se agrega después de convertir a grises y antes de normalizar. Luego se aplicó ecualización de histograma mediante el cálculo manual de frecuencias y de la función de distribución acumulada. Esta etapa ayuda a que placas con iluminación irregular tengan un contraste más aprovechable antes de binarizar.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.85\textwidth]{img/escala-grises.png}
-    \caption{Conversión inicial de la imagen a escala de grises y preparación tonal para las etapas posteriores.}
+    \imgopendiente{img/escala-gris-ruido.png}{width=0.85\textwidth}{Escala de grises, ruido sal y pimienta y normalización posterior.}
+    \caption{Conversión inicial de la imagen a escala de grises, inserción de ruido sal y pimienta y normalización tonal posterior.}
     \label{fig:escala_grises}
     \vspace{2pt}
     {\footnotesize Fuente: Elaboración propia.}
 \end{figure}
 
-\subsubsection{Ruido y suavizado espacial}
+\subsubsection{Ruido y suavizado}
 
 Se introdujo ruido sal y pimienta para comprobar si los filtros espaciales podían recuperar estructura útil sin destruir los caracteres. El ruido se agregó seleccionando posiciones aleatorias y sustituyendo sus valores por 0 o 255.
 
@@ -222,6 +260,16 @@ Se introdujo ruido sal y pimienta para comprobar si los filtros espaciales podí
 \textbf{Filtro de mediana:} ordena manualmente los valores de la vecindad y toma el elemento central. Fue el filtro más conveniente para ruido sal y pimienta porque elimina impulsos aislados sin promediar todos los contornos.
 
 \textbf{Filtro de moda:} selecciona el valor más repetido dentro de la máscara. Es útil cuando predominan intensidades repetidas, aunque puede ser menos estable en zonas con textura o degradación fotográfica.
+
+Además del suavizado espacial, el sistema permite suavizado frecuencial con filtros Ideal, Gaussiano y Butterworth. En este caso, la máscara se construye en el espectro de Fourier y el parámetro $D_0$ controla cuánta información de baja frecuencia se conserva.
+
+Para interpretar el efecto del suavizado se calcula también un mapa de cambio:
+
+\begin{equation}
+    D(x,y)=|I_{normalizada}(x,y)-I_{suavizada}(x,y)|
+\end{equation}
+
+Este mapa no es una salida final, sino un diagnóstico. Las zonas claras indican dónde el filtro modificó más la imagen; las zonas oscuras indican regiones que permanecieron casi iguales.
 
 \begin{table}[H]
     \centering
@@ -250,19 +298,42 @@ Se introdujo ruido sal y pimienta para comprobar si los filtros espaciales podí
     {\footnotesize Fuente: Elaboración propia.}
 \end{figure}
 
-% IMAGEN PENDIENTE: capturar desde la pestaña "Suavizado" tres ejecuciones de la misma placa: Media 5x5, Mediana 5x5 y Moda 5x5. Guardar como img/comparacion-suavizados.png. Conviene usar el mismo porcentaje de ruido y explicar que la comparación es justa porque cambia solo el filtro.
 \begin{figure}[H]
     \centering
-    \figpendiente{Comparación visual entre Media, Mediana y Moda con la misma máscara.}{Obtención: ejecutar la app tres veces con igual imagen, ruido y máscara; cambiar únicamente el filtro de suavizado.}
+    \begin{minipage}{0.31\textwidth}
+        \centering
+        \imgopendiente{img/media.png}{width=\textwidth}{Filtro de media.}\\
+        {\footnotesize Media}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.31\textwidth}
+        \centering
+        \imgopendiente{img/mediana.png}{width=\textwidth}{Filtro de mediana.}\\
+        {\footnotesize Mediana}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.31\textwidth}
+        \centering
+        \imgopendiente{img/moda.png}{width=\textwidth}{Filtro de moda.}\\
+        {\footnotesize Moda}
+    \end{minipage}
     \caption{Figura propuesta para comparar la respuesta de los filtros espaciales ante ruido sal y pimienta.}
     \label{fig:comparacion_suavizados}
 \end{figure}
 
 \subsubsection{Acentuado espacial y frecuencial}
 
-El acentuado se ubicó después del suavizado porque una imagen suavizada tiene menos ruido aislado y permite resaltar bordes con menor riesgo de amplificar puntos falsos. En dominio espacial se emplearon operadores como Roberts, Prewitt, Sobel y Laplaciano. En dominio frecuencial se aplicó un filtro pasa-altas gaussiano controlado por $D_0$.
+El acentuado se ubicó después del suavizado porque una imagen suavizada tiene menos ruido aislado y permite resaltar bordes con menor riesgo de amplificar puntos falsos. En la versión final del sistema, el acentuado espacial se concentra en tres opciones: Laplaciano, pasa-alto y High-Boost. En dominio frecuencial se incluyeron máscaras Ideal, Gaussiana, Butterworth y High-Boost, todas controladas por $D_0$ y, cuando corresponde, por un factor de realce.
 
-En el caso de placas, Sobel fue una opción equilibrada para el acentuado espacial: detecta cambios horizontales y verticales con mayor estabilidad que Roberts y sin la agresividad direccional de Kirsch. Esto deja letras y números más marcados antes del umbral.
+Esta separación evita confundir el acentuado con el gradiente. El acentuado prepara la imagen para la binarización, mientras que Roberts, Prewitt, Sobel, Kirsch y Laplaciano se utilizan posteriormente como operadores de borde. En placas, Laplaciano y High-Boost permiten remarcar letras y números antes del umbral, aunque un factor alto puede amplificar textura o manchas.
+
+En el acentuado espacial, el High-Boost se implementó sobre la respuesta Laplaciana:
+
+\begin{equation}
+    I_{HB}(x,y)=I(x,y)+(A-1)L(x,y)
+\end{equation}
+
+Con $A=1$ la imagen queda sin refuerzo adicional; con $A=2$ se obtiene un efecto cercano a sumar una vez la respuesta Laplaciana. Esta formulación evita confundir High-Boost con un simple promedio restado y lo mantiene coherente con la etapa de acentuado.
 
 \begin{figure}[H]
     \centering
@@ -273,10 +344,25 @@ En el caso de placas, Sobel fue una opción equilibrada para el acentuado espaci
     {\footnotesize Fuente: Elaboración propia.}
 \end{figure}
 
-% IMAGEN PENDIENTE: capturar la pestaña "Acentuado" comparando Roberts, Sobel y Laplaciano sobre la misma placa suavizada. Guardar como img/comparacion-acentuado.png. Interpretar Sobel como opción estable y Roberts como sensible al ruido.
 \begin{figure}[H]
     \centering
-    \figpendiente{Comparación de operadores de acentuado espacial.}{Obtención: mantener igual suavizado y umbral; cambiar únicamente el operador de acentuado.}
+    \begin{minipage}{0.31\textwidth}
+        \centering
+        \imgopendiente{img/acentuado-laplaciano.png}{width=\textwidth}{Acentuado Laplaciano.}\\
+        {\footnotesize Laplaciano}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.31\textwidth}
+        \centering
+        \imgopendiente{img/acentuado-paso-alto.png}{width=\textwidth}{Acentuado pasa-alto.}\\
+        {\footnotesize Pasa-alto}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.31\textwidth}
+        \centering
+        \imgopendiente{img/acentuado-high-boost.png}{width=\textwidth}{Acentuado High-Boost.}\\
+        {\footnotesize High-Boost}
+    \end{minipage}
     \caption{Figura propuesta para justificar la selección del operador de acentuado en placas vehiculares.}
     \label{fig:comparacion_acentuado}
 \end{figure}
@@ -306,7 +392,7 @@ Un umbral demasiado bajo conserva ruido y zonas del fondo; uno demasiado alto fr
 
 \subsubsection{Gradiente y operadores direccionales}
 
-Después de binarizar se aplica un operador de gradiente para obtener el mapa de bordes. En el proyecto se incluyeron Roberts, Prewitt, Sobel, Kirsch y Laplaciano. Los tres primeros calculan componentes direccionales $G_x$ y $G_y$, mientras que Kirsch evalúa varias direcciones y conserva la respuesta máxima. Laplaciano responde a cambios de segundo orden y no separa explícitamente horizontal/vertical.
+Después de binarizar se aplica un operador de gradiente para obtener el mapa de bordes. En el proyecto se incluyeron Roberts, Prewitt, Sobel, Kirsch y Laplaciano. En Prewitt y Sobel, $G_x$ mide cambios de izquierda a derecha y por eso revela bordes verticales; $G_y$ mide cambios de arriba hacia abajo y revela bordes horizontales. Roberts trabaja con diagonales, Kirsch evalúa varias direcciones y Laplaciano responde a cambios de segundo orden.
 
 \begin{table}[H]
     \centering
@@ -332,17 +418,32 @@ Después de binarizar se aplica un operador de gradiente para obtener el mapa de
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{img/gradiente.png}
+    \imgopendiente{img/binarizacion-gradiente-laplaciano.png}{width=0.9\textwidth}{Binarización y gradiente Laplaciano con componentes diagnósticas.}
     \caption{Visualización del gradiente y sus componentes. Esta etapa genera el mapa de bordes que alimenta la detección de regiones.}
     \label{fig:gradiente}
     \vspace{2pt}
     {\footnotesize Fuente: Elaboración propia.}
 \end{figure}
 
-% IMAGEN PENDIENTE: capturar desde la pestaña "Gradiente" una comparación Sobel vs Kirsch usando la misma imagen binarizada. Guardar como img/comparacion-gradientes.png. En la interpretación indicar que Kirsch marca más contornos, pero Sobel puede dejar menos ruido para BFS.
 \begin{figure}[H]
     \centering
-    \figpendiente{Comparación entre Sobel y Kirsch sobre la misma máscara binaria.}{Obtención: ejecutar dos veces con iguales parámetros previos; cambiar solo el operador de gradiente.}
+    \begin{minipage}{0.31\textwidth}
+        \centering
+        \imgopendiente{img/gradiente-sobel.png}{width=\textwidth}{Gradiente Sobel.}\\
+        {\footnotesize Sobel}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.31\textwidth}
+        \centering
+        \imgopendiente{img/gradiente-kirsch.png}{width=\textwidth}{Gradiente Kirsch.}\\
+        {\footnotesize Kirsch}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.31\textwidth}
+        \centering
+        \imgopendiente{img/gradiente-laplaciano.png}{width=\textwidth}{Gradiente Laplaciano.}\\
+        {\footnotesize Laplaciano}
+    \end{minipage}
     \caption{Figura propuesta para comparar estabilidad y fuerza de respuesta de los gradientes.}
     \label{fig:comparacion_gradientes}
 \end{figure}
@@ -353,9 +454,33 @@ La detección de regiones se realizó sobre la máscara de bordes filtrada. Prim
 
 Esta decisión es importante: el sistema no ``lee'' que un texto dice ECUADOR; lo descarta porque sus regiones suelen ser más pequeñas, estar ubicadas en la zona superior o tener proporciones distintas a los caracteres principales de la placa. De forma similar, el marco de la placa se descarta por ser una región demasiado grande o demasiado ancha.
 
+El filtrado de regiones combina reglas configurables y reglas geométricas. Primero se respeta el área mínima y el área máxima definidas por el usuario. Después se descartan regiones con cajas demasiado pequeñas, demasiado anchas, demasiado altas o con baja densidad de píxeles blancos. Finalmente, cuando hay demasiadas candidatas, se conservan las regiones más relevantes y se ordenan de izquierda a derecha para formar una secuencia compatible con una futura lectura de placa.
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{|p{4.4cm}|p{9.5cm}|}
+        \hline
+        \textbf{Regla aplicada} & \textbf{Motivo dentro del sistema} \\
+        \hline
+        Área mínima y máxima & Reduce puntos de ruido y evita componentes gigantes. \\
+        \hline
+        Tamaño de \textit{bounding box} & Elimina regiones que no tienen proporción razonable para un carácter. \\
+        \hline
+        Ancho o alto excesivo & Evita seleccionar el marco completo de la placa. \\
+        \hline
+        Densidad baja & Descarta cajas grandes con pocos píxeles útiles en su interior. \\
+        \hline
+        Orden izquierda-derecha & Prepara los recortes para una posible clasificación secuencial. \\
+        \hline
+    \end{tabular}
+    \caption{Criterios usados para pasar de componentes conexas a regiones útiles.}
+    \label{tab:filtrado_regiones}
+\end{table}
+
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{img/regiones-1.png}
+    \imgopendiente{img/regiones-bounding-box.png}{width=0.9\textwidth}{Regiones detectadas y bounding boxes sobre la placa.}
     \caption{Detección de regiones sobre la placa. Los \textit{bounding boxes} se dibujan sobre la imagen original para interpretar visualmente qué objetos fueron aceptados.}
     \label{fig:regiones}
     \vspace{2pt}
@@ -364,45 +489,152 @@ Esta decisión es importante: el sistema no ``lee'' que un texto dice ECUADOR; l
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{img/regiones-2.png}
+    \imgopendiente{img/submatriz-resultado.png}{width=0.9\textwidth}{Submatrices normalizadas generadas por la aplicación.}
     \caption{Submatrices normalizadas. Cada recorte se redimensiona por vecino más cercano para preparar una posible entrada a un clasificador.}
     \label{fig:submatrices}
     \vspace{2pt}
     {\footnotesize Fuente: Elaboración propia.}
 \end{figure}
 
-% IMAGEN PENDIENTE: capturar una comparación antes/después del filtrado de regiones. La primera imagen debe mostrar el gradiente binario bruto con muchas regiones; la segunda debe mostrar la máscara filtrada y los bounding boxes finales. Guardar como img/comparacion-regiones.png.
 \begin{figure}[H]
     \centering
-    \figpendiente{Comparación entre regiones detectadas antes y después del filtrado por forma, tamaño y posición.}{Obtención: capturar la pestaña Gradiente y luego la pestaña Regiones con los mismos parámetros.}
-    \caption{Figura propuesta para demostrar que el filtrado reduce ruido, texto superior y marco de placa.}
+    \imgopendiente{img/comparacion-regiones.png}{width=0.95\textwidth}{Comparación entre gradiente binario y bounding boxes finales.}
+    \caption{Comparación entre el gradiente binario exportado y el resultado con \textit{bounding boxes}. Esta evidencia muestra qué información llega al filtrado de regiones y qué objetos quedan como candidatos útiles.}
     \label{fig:comparacion_regiones}
+\end{figure}
+
+\subsubsection{Salida para clasificador y guardado final}
+
+La aplicación no realiza todavía el entrenamiento de una red neuronal, pero deja preparada su entrada. Cada región aceptada se recorta desde la máscara final, se redimensiona a $64 \times 64$ mediante vecino más cercano y se convierte en un vector normalizado entre 0 y 1. En el código, esta salida se conserva como \texttt{recortes\_clasificador} y \texttt{entradas\_red\_neuronal}, junto con metadatos como región, área y \textit{bounding box}.
+
+También se agregó una opción de exportación desde la interfaz. Al presionar \textbf{Guardar final}, el sistema almacena el gradiente, el gradiente binario, la máscara filtrada, la imagen con \textit{bounding boxes}, el mosaico de recortes, los recortes individuales y un archivo \texttt{metadata\_recortes.csv}. En la ejecución documentada se generaron 7 recortes normalizados, cada uno asociado con su región, área, perímetro y coordenadas. Esto permite documentar el resultado sin depender únicamente de capturas de pantalla.
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{|p{5cm}|p{9.5cm}|}
+        \hline
+        \textbf{Salida exportada} & \textbf{Utilidad dentro del informe y del proyecto} \\
+        \hline
+        \texttt{01\_gradiente.png} & Permite defender qué operador de borde produjo la máscara base. \\
+        \hline
+        \texttt{02\_gradiente\_binario.png} & Muestra qué información pasa al filtrado de regiones. \\
+        \hline
+        \texttt{03\_mascara\_regiones.png} & Evidencia la limpieza de puntos aislados antes del BFS. \\
+        \hline
+        \texttt{04\_bounding\_boxes.png} & Resume visualmente las regiones aceptadas sobre la placa original. \\
+        \hline
+        \texttt{05\_recortes\_mosaico.png} & Presenta las submatrices normalizadas para el clasificador. \\
+        \hline
+        \texttt{metadata\_recortes.csv} & Registra índice, región, área, perímetro y coordenadas del \textit{bounding box}. \\
+        \hline
+    \end{tabular}
+    \caption{Archivos generados por la opción de guardado final.}
+    \label{tab:salidas_exportadas}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \imgopendiente{img/exportacion-final.png}{width=0.95\textwidth}{Exportación final generada por la aplicación.}
+    \caption{Evidencia del guardado final: gradiente, \textit{bounding boxes} y mosaico de recortes normalizados. Estos archivos permiten reutilizar el resultado para revisión, comparación o una red neuronal posterior.}
+    \label{fig:exportacion_final}
+\end{figure}
+
+\subsubsection{Validación con varias placas}
+
+Para que el informe no dependa de una sola placa, conviene separar la imagen usada para ajustar parámetros de las imágenes usadas para validar. La primera puede ser una placa relativamente limpia, donde el sistema debe detectar la mayoría de caracteres principales. La segunda debería ser una placa más exigente, por ejemplo \texttt{./placas/placa6.png}, para comprobar si los parámetros elegidos siguen funcionando cuando cambian iluminación, textura, tamaño o inclinación.
+
+La comparación no debe buscar únicamente una imagen ``bonita'', sino medir la estabilidad del flujo. Para cada placa conviene reportar: filtro de suavizado, acentuado, operador de gradiente, umbral, área mínima, área máxima, número de regiones finales, falsos positivos visibles y calidad visual de los recortes. Si una placa falla, ese resultado también es útil porque permite justificar límites del método.
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{|p{2.7cm}|p{3.3cm}|p{3.2cm}|p{3.1cm}|p{2.7cm}|}
+        \hline
+        \textbf{Imagen} & \textbf{Rol en la prueba} & \textbf{Qué capturar} & \textbf{Qué comparar} & \textbf{Resultado esperado} \\
+        \hline
+        Placa base & Ajuste inicial de parámetros. & Pestaña Regiones y exportación final. & Número de regiones y recortes legibles. & Caracteres principales separados. \\
+        \hline
+        \texttt{placa6.png} & Validación independiente. & Pestaña Regiones con los mismos filtros base. & Pérdida de caracteres o ruido agregado. & Funcionamiento parcial o total justificado. \\
+        \hline
+        Otra placa difícil & Prueba de estrés opcional. & Comparación de gradientes o $D_0$. & Sensibilidad del método ante textura e inclinación. & Identificar límites del pipeline. \\
+        \hline
+    \end{tabular}
+    \caption{Tabla propuesta para validar el pipeline con más de una placa.}
+    \label{tab:validacion_placas}
+\end{table}
+
+% IMAGEN PENDIENTE: procesar ./placas/placa6.png con parámetros finales y guardar una captura de la pestaña Regiones. Guardar como img/validacion-placa6.png. Si la detección falla parcialmente, conservarla y explicar qué parámetro afectó el resultado.
+\begin{figure}[H]
+    \centering
+    \figpendiente{Validación del pipeline con \texttt{placa6.png}.}{Obtención: cargar \texttt{./placas/placa6.png}, aplicar el flujo completo y capturar la pestaña Regiones.}
+    \caption{Figura propuesta para verificar la efectividad final en una placa distinta a la usada durante el ajuste.}
+    \label{fig:validacion_placa6}
+\end{figure}
+
+% IMAGEN PENDIENTE: armar una figura de dos columnas con la placa base y placa6.png, ambas en la pestaña Regiones. Guardar como img/comparacion-placas.png. Bajo cada imagen anotar parámetros y número de regiones.
+\begin{figure}[H]
+    \centering
+    \figpendiente{Comparación final entre una placa base y \texttt{placa6.png}.}{Obtención: usar el mismo formato de captura en ambas placas y anotar filtros, umbral y regiones.}
+    \caption{Figura propuesta para mostrar que la evaluación no se ajustó únicamente a una imagen.}
+    \label{fig:comparacion_placas}
 \end{figure}
 
 \subsubsection{El dominio de frecuencia}
 
-El filtrado en frecuencia no trabaja con vecindades de píxeles, sino con componentes senoidales y cosenoidales de la imagen. En el sistema se incluyeron dos opciones: pasa-bajas gaussiano para suavizado frecuencial y pasa-altas gaussiano para acentuado frecuencial. Ambos usan una frecuencia de corte $D_0$ configurable.
+El filtrado en frecuencia no trabaja con vecindades de píxeles, sino con componentes senoidales y cosenoidales de la imagen. En el sistema se incluyeron filtros pasa-bajas para suavizado y pasa-altas para acentuado, con máscaras Ideal, Gaussiana y Butterworth. Para acentuado también se añadió High-Boost, que conserva parte de la base de la imagen mientras refuerza altas frecuencias. Todos usan una frecuencia de corte $D_0$ configurable.
 
 El flujo construido consta de:
 
 \begin{enumerate}
     \item Aplicar la Transformada Rápida de Fourier en 2D (\texttt{np.fft.fft2}).
     \item Centrar el espectro de bajas frecuencias en el origen mediante un \textit{shift}.
-    \item Construir manualmente una máscara gaussiana iterando sobre cada coordenada $(u, v)$, determinando su distancia al centro y aplicando $e^{-D(u,v)^2/(2D_0^2)}$.
+    \item Construir manualmente una máscara de frecuencia iterando sobre cada coordenada $(u, v)$, determinando su distancia al centro y aplicando la fórmula del filtro seleccionado.
     \item Multiplicar iterativamente el espectro complejo por la máscara real (punto a punto con bucles).
     \item Revertir el espectro al dominio espacial aplicando la Transformada Inversa (IFFT) y normalizando su parte real.
 \end{enumerate}
 
+Las máscaras usadas en frecuencia se derivan desde una máscara pasa-bajas $H_{PB}(u,v)$. Para acentuado, el pasa-altas se obtiene como $1-H_{PB}(u,v)$ y High-Boost como $A-H_{PB}(u,v)$. Por eso el mismo valor $D_0$ no se interpreta igual en suavizado y acentuado: en suavizado conserva bajas frecuencias; en acentuado decide qué tanto detalle de alta frecuencia se refuerza.
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{|p{3.4cm}|p{5.4cm}|p{5.2cm}|}
+        \hline
+        \textbf{Filtro} & \textbf{Idea matemática} & \textbf{Efecto visual esperado} \\
+        \hline
+        Ideal & Corte directo en la distancia $D(u,v)$ & Transición brusca; puede generar artefactos. \\
+        \hline
+        Butterworth & Transición suavizada por orden & Menos brusco que Ideal, conserva control del corte. \\
+        \hline
+        Gaussiano & Caída exponencial suave & Suavizado o realce más gradual. \\
+        \hline
+        High-Boost & Conserva base y refuerza altas frecuencias & Mayor detalle, con riesgo de amplificar ruido. \\
+        \hline
+    \end{tabular}
+    \caption{Interpretación de los filtros frecuenciales disponibles en la aplicación.}
+    \label{tab:filtros_frecuencia}
+\end{table}
+
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.82\textwidth,height=0.42\textheight,keepaspectratio]{img/filtros-app-2.png}
-    \caption{Diagnóstico en frecuencia. Se observa el espectro original, la máscara gaussiana, el espectro filtrado y la reconstrucción espacial.}
+    \imgopendiente{img/filtro-app-2.png}{width=0.82\textwidth,height=0.42\textheight,keepaspectratio}{Diagnóstico de filtros en la aplicación.}
+    \caption{Diagnóstico en frecuencia. Se observa el espectro original, la máscara aplicada, el espectro filtrado y la reconstrucción espacial.}
     \label{fig:app_frecuencia}
     \vspace{2pt}
     {\footnotesize Fuente: Elaboración propia.}
 \end{figure}
 
-El filtro gaussiano tiene la ventaja de no poseer una frecuencia de corte abrupta, por lo que reduce el riesgo de artefactos de anillado. En suavizado, un $D_0$ menor produce una imagen más borrosa; en acentuado, el pasa-altas resalta bordes y detalles al atenuar las bajas frecuencias.
+El filtro ideal produce un corte directo entre frecuencias aceptadas y rechazadas; Butterworth suaviza la transición; Gaussiano evita cortes bruscos y reduce el riesgo de artefactos de anillado. En suavizado, un $D_0$ menor produce una imagen más borrosa; en acentuado, el pasa-altas resalta bordes y detalles al atenuar las bajas frecuencias.
+
+\begin{figure}[htbp]
+    \centering
+    \imgopendiente{img/espacial-gaussiano.png}{width=0.82\textwidth,height=0.38\textheight,keepaspectratio}{Resultado del suavizado frecuencial gaussiano.}
+    \caption{Suavizado frecuencial con filtro Gaussiano. Esta vista permite comparar la salida reconstruida con el comportamiento esperado de un pasa-bajas suave.}
+    \label{fig:gaussiano_frecuencia}
+    \vspace{2pt}
+    {\footnotesize Fuente: Elaboración propia.}
+\end{figure}
 
 % IMAGEN PENDIENTE: capturar el mismo suavizado frecuencial con D0 bajo, medio y alto. Guardar como img/comparacion-d0.png. Interpretar cómo cambia el detalle: D0 bajo suaviza más; D0 alto conserva más estructura.
 \begin{figure}[htbp]
@@ -414,16 +646,50 @@ El filtro gaussiano tiene la ventaja de no poseer una frecuencia de corte abrupt
 
 \subsubsection{Arquitectura y Experiencia de Usuario}
 
-La interfaz, construida sobre PySide6, soluciona la paralización del sistema (generada por la complejidad de $O(N^2 \cdot M^2)$ de los filtros manuales) mediante el uso de \texttt{QThread}. Esto delega la pesada tarea matemática a núcleos secundarios de la CPU, manteniendo fluida la interacción con las pestañas y visualizaciones.
+La interfaz, construida sobre PySide6, soluciona la paralización del sistema (generada por la complejidad de $O(N^2 \cdot M^2)$ de los filtros manuales) mediante el uso de \texttt{QThread}. Esto delega la tarea matemática a un hilo de trabajo, manteniendo fluida la interacción con las pestañas y visualizaciones.
+
+Después de la reorganización final, el proyecto quedó dividido por responsabilidades. El archivo \texttt{main.py} solo inicia la ventana. La carpeta \texttt{src/modelo} contiene los algoritmos: carga y preprocesamiento, suavizado, frecuencia, gradientes, regiones y utilidades. El archivo \texttt{src/aplicacion.py} coordina el pipeline y concentra los parámetros/resultados. Finalmente, \texttt{src/ui} contiene la ventana, controles, pestañas, estilos, widgets y exportación de resultados finales.
+
+\begin{table}[H]
+    \centering
+    \renewcommand{\arraystretch}{1.2}
+    \begin{tabular}{|p{4.8cm}|p{9.3cm}|}
+        \hline
+        \textbf{Módulo} & \textbf{Responsabilidad principal} \\
+        \hline
+        \texttt{src/modelo/base.py} & Carga de imagen, escala de grises, histograma, normalización y ruido sal/pimienta. \\
+        \hline
+        \texttt{src/modelo/suavizado.py} & Media, mediana, moda y convolución manual por máscara. \\
+        \hline
+        \texttt{src/modelo/frecuencia.py} & FFT, máscaras Ideal/Gaussiana/Butterworth, pasa-bajas, pasa-altas y High-Boost. \\
+        \hline
+        \texttt{src/modelo/gradientes.py} & Roberts, Prewitt, Sobel, Kirsch, Laplaciano y diagnósticos de componentes. \\
+        \hline
+        \texttt{src/modelo/regiones.py} & Binarización, limpieza, BFS, filtrado de regiones, bounding boxes y recortes 64x64. \\
+        \hline
+        \texttt{src/ui} & Interfaz por pestañas, controles laterales, ejecución por etapas y guardado final. \\
+        \hline
+    \end{tabular}
+    \caption{Organización final del código fuente de la aplicación.}
+    \label{tab:arquitectura_codigo}
+\end{table}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.95\textwidth]{img/vista-general.png}
+    \imgopendiente{img/final-filtro-app.png}{width=0.95\textwidth}{Vista general de la aplicación con resultados finales.}
     \caption{Vista General de la Interfaz. A la izquierda los paneles de parámetros en tiempo real, a la derecha el visor embebido de Matplotlib Canvas.}
     \label{fig:vista_general}
     \vspace{2pt}
     {\footnotesize Fuente: Elaboración propia.}
 \end{figure}
+
+\subsubsection{Alcance y limitaciones del sistema}
+
+El sistema llega hasta la extracción de regiones y preparación de recortes, pero no realiza todavía reconocimiento OCR ni entrenamiento de una red neuronal. Por esa razón, una detección con \textit{bounding boxes} correctos no equivale automáticamente a lectura completa de la placa; únicamente garantiza que se generaron entradas candidatas para una etapa posterior.
+
+También existen limitaciones propias del enfoque. La detección depende del umbral, del operador de gradiente y de los rangos de área elegidos. Placas con mucha inclinación, iluminación extrema, bajo contraste o caracteres rotos pueden requerir parámetros distintos. Además, como el ruido sal y pimienta se genera de forma aleatoria, dos ejecuciones con el mismo porcentaje de ruido pueden producir resultados ligeramente diferentes.
+
+Estas limitaciones no invalidan el sistema; al contrario, muestran por qué la interfaz permite comparar filtros y ajustar parámetros por etapa. Para un uso más robusto en un sistema real, sería necesario añadir normalización geométrica de la placa, pruebas con más imágenes y un clasificador entrenado con los recortes exportados.
 
 \subsection{Habilidades blandas empleadas en la práctica}
 $\blacksquare$ Trabajo en equipo \\
@@ -440,21 +706,27 @@ $\square$ Resolución de conflictos
 
 El desarrollo manual de algoritmos de procesamiento de imágenes evidenció la carga computacional que las librerías modernas suelen ocultar. El reemplazo de operaciones optimizadas por bucles secuenciales aumentó los tiempos de procesamiento, pero permitió comprender de forma directa cómo se construyen filtros, máscaras, histogramas, gradientes y regiones conexas.
 
-La separación entre suavizado, acentuado, binarización y gradiente permitió comprobar que la segmentación final depende de toda la cadena, no de un único operador. En placas vehiculares, la mediana resultó adecuada para ruido sal y pimienta, mientras que Sobel ofreció una respuesta estable para resaltar caracteres antes de la binarización.
+La separación entre suavizado, acentuado, binarización y gradiente permitió comprobar que la segmentación final depende de toda la cadena, no de un único operador. En placas vehiculares, la mediana resultó adecuada para ruido sal y pimienta; Laplaciano y High-Boost funcionaron como realces previos al umbral; y Sobel o Kirsch fueron útiles como operadores de borde después de binarizar.
 
 La detección de regiones demostró que no basta con obtener bordes: también es necesario filtrar componentes por tamaño, forma y posición. Esta etapa permitió descartar ruido, fragmentos del marco y texto superior de la placa, produciendo submatrices más útiles para una futura red neuronal.
 
 El dominio de frecuencia complementó el análisis espacial al mostrar cómo $D_0$ controla el paso o rechazo de frecuencias. El pasa-bajas suaviza globalmente la imagen, mientras que el pasa-altas resalta detalles y bordes. Su interpretación visual mediante espectros permitió relacionar la teoría de Fourier con resultados observables en la interfaz.
 
+La exportación final deja evidencia reutilizable del proceso: gradiente, máscara filtrada, \textit{bounding boxes}, mosaico de recortes y metadatos. Esto conecta el trabajo actual con una posible fase posterior de clasificación supervisada.
+
 \subsection{Recomendaciones}
 
 Para placas con ruido sal y pimienta se recomienda iniciar con suavizado por mediana y máscaras moderadas, por ejemplo $3 \times 3$ o $5 \times 5$. Máscaras grandes pueden limpiar más ruido, pero también deforman trazos delgados de letras y números.
 
-Para acentuado se recomienda utilizar Sobel como punto de partida. Roberts puede ser útil en imágenes limpias, pero amplifica fácilmente ruido. Kirsch es recomendable como comparación cuando se desea observar una respuesta direccional más marcada.
+Para acentuado espacial se recomienda iniciar con Laplaciano y comparar con High-Boost cuando los caracteres se vean débiles. El pasa-alto es útil para observar cambios bruscos, pero puede volver más sensible la binarización si hay textura o manchas.
+
+Para gradiente se recomienda iniciar con Sobel como punto de partida. Roberts puede ser útil en imágenes limpias, pero amplifica fácilmente ruido. Kirsch es recomendable como comparación cuando se desea observar una respuesta direccional más marcada.
 
 En la detección de regiones conviene ajustar el área mínima antes de modificar demasiados filtros previos. Si aparecen muchas regiones falsas, aumentar el área mínima ayuda a eliminar puntos, fragmentos y texto pequeño. Si desaparecen caracteres reales, el área mínima o el umbral de binarización probablemente están demasiado altos.
 
 Al ajustar filtros de frecuencia, se recomienda observar el valor $D_0$ junto con la máscara y el espectro filtrado. Un $D_0$ bajo en pasa-bajas genera mayor suavizado, mientras que un $D_0$ alto conserva más detalle. En pasa-altas ocurre una lectura complementaria: se atenúa la iluminación global y se resaltan bordes o variaciones finas.
+
+Para defender la efectividad final, no debería usarse una sola imagen. Es recomendable procesar la placa base y al menos una imagen adicional, como \texttt{./placas/placa6.png}, registrando los parámetros y la calidad de los recortes. Si se dispone de tiempo, una tercera placa difícil ayuda a mostrar límites y no solo aciertos.
 
 \subsection{Referencias bibliográficas}
 {
