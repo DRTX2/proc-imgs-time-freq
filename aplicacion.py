@@ -12,7 +12,9 @@ class ParametrosProcesamiento:
     ruido: float
     mascara: int
     d0: int
+    dominio_suavizado: str
     tipo_suavizado: str
+    dominio_acentuado: str
     tipo_acentuado: str
     tipo_gradiente: str
     umbral: int = 128
@@ -32,7 +34,9 @@ class ResultadoProcesamiento:
     imagen_ruido: Any
     suavizada: Any
     mapa_cambio: Any
+    diagnostico_suavizado: dict[str, Any]
     acentuada: Any
+    diagnostico_acentuado: dict[str, Any]
     binaria_acentuada: Any
     gradiente_final: Any
     gradiente_binario: Any
@@ -53,7 +57,9 @@ class ResultadoProcesamiento:
     umbral: int
     min_area: int
     max_area: int
+    dominio_suavizado: str
     tipo_suavizado: str
+    dominio_acentuado: str
     tipo_acentuado: str
     tipo_gradiente: str
     mascara: int
@@ -71,7 +77,9 @@ class ResultadoProcesamiento:
             "ruido": self.imagen_ruido,
             "suavizada": self.suavizada,
             "mapa_cambio": self.mapa_cambio,
+            "diagnostico_suavizado": self.diagnostico_suavizado,
             "acentuada": self.acentuada,
+            "diagnostico_acentuado": self.diagnostico_acentuado,
             "binaria_acentuada": self.binaria_acentuada,
             "gradiente_final": self.gradiente_final,
             "gradiente_binario": self.gradiente_binario,
@@ -92,7 +100,9 @@ class ResultadoProcesamiento:
             "umbral": self.umbral,
             "min_area": self.min_area,
             "max_area": self.max_area,
+            "dominio_suavizado": self.dominio_suavizado,
             "tipo_suavizado": self.tipo_suavizado,
+            "dominio_acentuado": self.dominio_acentuado,
             "tipo_acentuado": self.tipo_acentuado,
             "tipo_gradiente": self.tipo_gradiente,
             "mascara": self.mascara,
@@ -123,17 +133,31 @@ class ProcesadorImagen:
 
         imagen_suavizada = self._aplicar_filtro_suavizado(
             img_ruido,
+            parametros.dominio_suavizado,
             parametros.tipo_suavizado,
             parametros.mascara,
+            parametros.d0,
+        )
+        diagnostico_suavizado = self._diagnostico_suavizado(
+            img_ruido,
+            parametros.dominio_suavizado,
+            parametros.d0,
         )
         mapa_cambio = self.modelo.diferencia_absoluta_manual(img_ruido, imagen_suavizada)
-        print(f"[pipeline] Suavizado listo: {parametros.tipo_suavizado}.")
+        print(f"[pipeline] Suavizado listo: {parametros.dominio_suavizado} / {parametros.tipo_suavizado}.")
 
         imagen_acentuada = self._aplicar_filtro_acentuado(
             imagen_suavizada,
+            parametros.dominio_acentuado,
             parametros.tipo_acentuado,
+            parametros.d0,
         )
-        print(f"[pipeline] Acentuado listo: {parametros.tipo_acentuado}.")
+        diagnostico_acentuado = self._diagnostico_acentuado(
+            imagen_suavizada,
+            parametros.dominio_acentuado,
+            parametros.d0,
+        )
+        print(f"[pipeline] Acentuado listo: {parametros.dominio_acentuado} / {parametros.tipo_acentuado}.")
 
         img_binaria_acentuada = self.modelo.binarizar_imagen(imagen_acentuada, parametros.umbral)
         print("[pipeline] Binarización post-acentuado lista.")
@@ -148,11 +172,6 @@ class ProcesadorImagen:
             parametros.tipo_gradiente,
         )
         print(f"[pipeline] Gradiente final listo: {parametros.tipo_gradiente}.")
-
-        resultado_frecuencia = self.modelo.filtro_frecuencia_gaussiano(img_ruido, parametros.d0)
-        diagnostico_frecuencia = self.modelo.diagnostico_frecuencia(img_ruido, parametros.d0)
-        diagnostico_pa = self.modelo.diagnostico_pasaaltas(img_ruido, parametros.d0)
-        print("[pipeline] Frecuencia lista.")
 
         max_area = parametros.max_area if parametros.max_area > 0 else None
         regiones = self.modelo.etiquetar_regiones_bfs(
@@ -174,19 +193,21 @@ class ProcesadorImagen:
             imagen_ruido=img_ruido,
             suavizada=imagen_suavizada,
             mapa_cambio=mapa_cambio,
+            diagnostico_suavizado=diagnostico_suavizado,
             acentuada=imagen_acentuada,
+            diagnostico_acentuado=diagnostico_acentuado,
             binaria_acentuada=img_binaria_acentuada,
             gradiente_final=gradiente_final,
             gradiente_binario=img_gradiente_binario,
             componentes_gradiente=componentes_gradiente,
-            frecuencia=resultado_frecuencia,
-            espectro_original=diagnostico_frecuencia["espectro_original"],
-            mascara_frecuencia=diagnostico_frecuencia["mascara"],
-            espectro_filtrado=diagnostico_frecuencia["espectro_filtrado"],
-            espectro_original_pa=diagnostico_pa["espectro_original_pa"],
-            mascara_pasaaltas=diagnostico_pa["mascara_pasaaltas"],
-            espectro_filtrado_pa=diagnostico_pa["espectro_filtrado_pa"],
-            pasaaltas_resultado=diagnostico_pa["pasaaltas_resultado"],
+            frecuencia=diagnostico_suavizado["salida"],
+            espectro_original=diagnostico_suavizado["espectro_original"],
+            mascara_frecuencia=diagnostico_suavizado["mascara"],
+            espectro_filtrado=diagnostico_suavizado["espectro_filtrado"],
+            espectro_original_pa=diagnostico_acentuado["espectro_original"],
+            mascara_pasaaltas=diagnostico_acentuado["mascara"],
+            espectro_filtrado_pa=diagnostico_acentuado["espectro_filtrado"],
+            pasaaltas_resultado=diagnostico_acentuado["salida"],
             binaria=img_gradiente_binario,
             bboxes=img_bboxes,
             recortes_tira=recortes_tira,
@@ -195,7 +216,9 @@ class ProcesadorImagen:
             umbral=parametros.umbral,
             min_area=parametros.min_area,
             max_area=parametros.max_area,
+            dominio_suavizado=parametros.dominio_suavizado,
             tipo_suavizado=parametros.tipo_suavizado,
+            dominio_acentuado=parametros.dominio_acentuado,
             tipo_acentuado=parametros.tipo_acentuado,
             tipo_gradiente=parametros.tipo_gradiente,
             mascara=parametros.mascara,
@@ -203,14 +226,18 @@ class ProcesadorImagen:
             ruido_porcentaje=int(round(parametros.ruido * 100)),
         )
 
-    def _aplicar_filtro_suavizado(self, imagen, tipo_filtro, tam_mascara):
+    def _aplicar_filtro_suavizado(self, imagen, dominio, tipo_filtro, tam_mascara, d0):
+        if dominio == "Frecuencial":
+            return self.modelo.filtro_frecuencia_gaussiano(imagen, d0)
         if tipo_filtro == "Media":
             return self.modelo.filtro_media(imagen, tam_mascara)
         if tipo_filtro == "Mediana":
             return self.modelo.filtro_mediana(imagen, tam_mascara)
         return self.modelo.filtro_moda(imagen, tam_mascara)
 
-    def _aplicar_filtro_acentuado(self, imagen, tipo_filtro):
+    def _aplicar_filtro_acentuado(self, imagen, dominio, tipo_filtro, d0):
+        if dominio == "Frecuencial":
+            return self.modelo.filtro_frecuencia_pasaaltas(imagen, d0)
         if tipo_filtro == "Roberts":
             return self.modelo.filtro_roberts(imagen)
         if tipo_filtro == "Prewitt":
@@ -218,6 +245,38 @@ class ProcesadorImagen:
         if tipo_filtro == "Sobel":
             return self.modelo.filtro_sobel(imagen)
         return self.modelo.filtro_laplaciano(imagen)
+
+    def _diagnostico_suavizado(self, imagen, dominio, d0):
+        if dominio == "Frecuencial":
+            diagnostico = self.modelo.diagnostico_frecuencia(imagen, d0)
+            return {
+                "espectro_original": diagnostico["espectro_original"],
+                "mascara": diagnostico["mascara"],
+                "espectro_filtrado": diagnostico["espectro_filtrado"],
+                "salida": diagnostico["resultado_gris"],
+            }
+        return {
+            "espectro_original": None,
+            "mascara": None,
+            "espectro_filtrado": None,
+            "salida": imagen,
+        }
+
+    def _diagnostico_acentuado(self, imagen, dominio, d0):
+        if dominio == "Frecuencial":
+            diagnostico = self.modelo.diagnostico_pasaaltas(imagen, d0)
+            return {
+                "espectro_original": diagnostico["espectro_original_pa"],
+                "mascara": diagnostico["mascara_pasaaltas"],
+                "espectro_filtrado": diagnostico["espectro_filtrado_pa"],
+                "salida": diagnostico["pasaaltas_resultado"],
+            }
+        return {
+            "espectro_original": None,
+            "mascara": None,
+            "espectro_filtrado": None,
+            "salida": imagen,
+        }
 
     def _aplicar_gradiente(self, imagen, tipo_filtro):
         gradientes = self.modelo.gradientes_bordes(imagen)

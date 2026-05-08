@@ -62,6 +62,9 @@ class ModeloImagen:
     def diagnostico_gradiente(self, imagen, operador):
         return diagnostico_gradiente(imagen, operador)
 
+    def filtro_frecuencia_pasaaltas(self, imagen, d0):
+        return filtro_frecuencia_pasaaltas(imagen, d0)
+
     def diagnostico_pasaaltas(self, imagen, d0):
         return diagnostico_pasaaltas(imagen, d0)
 
