@@ -595,6 +595,28 @@ def _gradiente_sobel_puro(imagen):
     return resultado
 
 
+def _gradiente_kirsch_puro(imagen):
+    """Devuelve la respuesta maxima del operador Kirsch usando 4 direcciones."""
+    alto, ancho = imagen.shape
+    resultado = np.zeros((alto, ancho), dtype=np.uint8)
+    kernels = _kernels_kirsch()
+
+    for fila in range(1, alto - 1):
+        for columna in range(1, ancho - 1):
+            maximo = 0.0
+            for kernel in kernels:
+                respuesta = 0.0
+                for mf in range(3):
+                    for mc in range(3):
+                        pixel = int(imagen[fila - 1 + mf, columna - 1 + mc])
+                        respuesta += pixel * kernel[mf][mc]
+                respuesta = abs(respuesta)
+                if respuesta > maximo:
+                    maximo = respuesta
+            resultado[fila, columna] = min(int(maximo), 255)
+    return resultado
+
+
 def _laplaciano_puro(imagen):
     """Devuelve solo la respuesta del Laplaciano (sin sumar original, normalizado a [0,255])."""
     alto, ancho = imagen.shape
@@ -795,6 +817,7 @@ def gradientes_bordes(imagen):
         "roberts_grad":    _gradiente_roberts_puro(base),
         "prewitt_grad":    _gradiente_prewitt_puro(base),
         "sobel_grad":      _gradiente_sobel_puro(base),
+        "kirsch_grad":     _gradiente_kirsch_puro(base),
         "laplaciano_grad": _laplaciano_puro(base),
     }
 
@@ -824,6 +847,12 @@ def diagnostico_gradiente(imagen, operador):
         return {
             "titulos": ["Gx (vertical)", "Gy (horizontal)", "Magnitud (G)"],
             "imagenes": [gx, gy, magnitud],
+        }
+    if operador == "Kirsch":
+        norte, este, maximo = _componentes_kirsch(base)
+        return {
+            "titulos": ["Kirsch 0°", "Kirsch 90°", "Respuesta máxima"],
+            "imagenes": [norte, este, maximo],
         }
 
     respuesta, respuesta_abs, normalizada = _componentes_laplaciano(base)
@@ -896,6 +925,45 @@ def _componentes_sobel(imagen):
             magnitud[fila, columna] = min(int(math.sqrt(suma_gx * suma_gx + suma_gy * suma_gy)), 255)
 
     return normalizar_matriz_uint8(np.abs(gx)), normalizar_matriz_uint8(np.abs(gy)), magnitud
+
+
+def _kernels_kirsch():
+    return [
+        [[5, 5, 5], [-3, 0, -3], [-3, -3, -3]],
+        [[5, 5, -3], [5, 0, -3], [-3, -3, -3]],
+        [[5, -3, -3], [5, 0, -3], [5, -3, -3]],
+        [[-3, -3, -3], [5, 0, -3], [5, 5, -3]],
+    ]
+
+
+def _componentes_kirsch(imagen):
+    alto, ancho = imagen.shape
+    respuesta_0 = np.zeros((alto, ancho), dtype=np.float64)
+    respuesta_90 = np.zeros((alto, ancho), dtype=np.float64)
+    maximo = np.zeros((alto, ancho), dtype=np.uint8)
+    kernels = _kernels_kirsch()
+
+    for fila in range(1, alto - 1):
+        for columna in range(1, ancho - 1):
+            respuestas = []
+            for kernel in kernels:
+                acumulador = 0.0
+                for mf in range(3):
+                    for mc in range(3):
+                        pixel = int(imagen[fila - 1 + mf, columna - 1 + mc])
+                        acumulador += pixel * kernel[mf][mc]
+                respuestas.append(acumulador)
+
+            respuesta_0[fila, columna] = respuestas[0]
+            respuesta_90[fila, columna] = respuestas[2]
+            max_resp = max(abs(valor) for valor in respuestas)
+            maximo[fila, columna] = min(int(max_resp), 255)
+
+    return (
+        normalizar_matriz_uint8(np.abs(respuesta_0)),
+        normalizar_matriz_uint8(np.abs(respuesta_90)),
+        maximo,
+    )
 
 
 def _componentes_laplaciano(imagen):

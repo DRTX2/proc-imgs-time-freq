@@ -237,15 +237,20 @@ class ComboSoloDropdown(QComboBox):
 
 
 class CanvasResultados(FigureCanvas):
-    def __init__(self, items, filas, columnas, parent=None):
-        altura = self._calcular_altura_canvas(len(items), filas, columnas)
+    def __init__(self, items, filas, columnas, parent=None, altura=None, altura_maxima=None, expandible=False):
+        altura = altura or self._calcular_altura_canvas(len(items), filas, columnas)
         self.fig = Figure(figsize=(12, altura / 100.0), facecolor="white")
         self.fig.subplots_adjust(left=0.04, right=0.98, top=0.90, bottom=0.10, wspace=0.18, hspace=0.24)
         super().__init__(self.fig)
         self.setParent(parent)
         self.setStyleSheet("background: white;")
         self.setMinimumHeight(altura)
-        self.setMaximumHeight(altura)
+        if expandible:
+            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            if altura_maxima is not None:
+                self.setMaximumHeight(altura_maxima)
+        else:
+            self.setMaximumHeight(altura if altura_maxima is None else altura_maxima)
 
         self.items = items
         self.axes = [
@@ -359,7 +364,7 @@ class VentanaPrincipal(QMainWindow):
 
         sidebar = QFrame()
         sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(360)
+        sidebar.setFixedWidth(374)
 
         sidebar_host_layout = QVBoxLayout(sidebar)
         sidebar_host_layout.setContentsMargins(0, 0, 0, 0)
@@ -371,7 +376,7 @@ class VentanaPrincipal(QMainWindow):
 
         sidebar_content = QWidget()
         sidebar_layout = QVBoxLayout(sidebar_content)
-        sidebar_layout.setContentsMargins(24, 24, 24, 24)
+        sidebar_layout.setContentsMargins(24, 24, 22, 24)
         sidebar_layout.setSpacing(14)
         botones_layout = QHBoxLayout()
         botones_layout.setSpacing(10)
@@ -465,6 +470,8 @@ class VentanaPrincipal(QMainWindow):
         root_layout.addWidget(sidebar)
         root_layout.addWidget(contenido, 1)
         self.setCentralWidget(root)
+        self._on_dominio_suavizado(self.combo_dominio_suavizado.currentText())
+        self._on_dominio_acentuado(self.combo_dominio_acentuado.currentText())
         self._actualizar_resumen_flujo()
 
     def _crear_tab_preprocesamiento(self):
@@ -489,8 +496,8 @@ class VentanaPrincipal(QMainWindow):
 
         self.canvas_suavizado = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "ruido",     "titulo": "Entrada"},
-                {"tipo": "imagen", "clave": "suavizada", "titulo": "Salida"},
+                {"tipo": "imagen", "clave": "ruido",     "titulo": "Imagen con ruido"},
+                {"tipo": "imagen", "clave": "suavizada", "titulo": "Resultado suavizado"},
             ],
             1,
             2,
@@ -504,8 +511,8 @@ class VentanaPrincipal(QMainWindow):
 
         self.canvas_acentuado = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "suavizada", "titulo": "Entrada"},
-                {"tipo": "imagen", "clave": "acentuada", "titulo": "Salida"},
+                {"tipo": "imagen", "clave": "suavizada", "titulo": "Base suavizada"},
+                {"tipo": "imagen", "clave": "acentuada", "titulo": "Resultado acentuado"},
             ],
             1,
             2,
@@ -554,8 +561,8 @@ class VentanaPrincipal(QMainWindow):
 
         self.canvas_binarizacion = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "acentuada",         "titulo": "Acentuado (entrada)"},
-                {"tipo": "imagen", "clave": "binaria_acentuada", "titulo": "Imagen binaria (salida)"},
+                {"tipo": "imagen", "clave": "acentuada",         "titulo": "Base acentuada"},
+                {"tipo": "imagen", "clave": "binaria_acentuada", "titulo": "Máscara binaria"},
             ],
             1, 2, self,
         )
@@ -573,24 +580,29 @@ class VentanaPrincipal(QMainWindow):
 
         self.canvas_regiones = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "binaria", "titulo": "Gradiente binario (entrada detección)"},
+                {"tipo": "imagen", "clave": "binaria", "titulo": "Mapa binario de bordes"},
                 {"tipo": "imagen", "clave": "bboxes",  "titulo": "Regiones detectadas"},
             ],
             1,
             2,
             self,
+            altura=280,
+            altura_maxima=420,
+            expandible=True,
         )
         layout.addWidget(self.canvas_regiones)
 
         self.canvas_recortes = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "recortes_tira", "titulo": "Submatrices normalizadas — entrada al clasificador"},
+                {"tipo": "imagen", "clave": "recortes_tira", "titulo": "Submatrices normalizadas para clasificación"},
             ],
             1,
             1,
             self,
+            altura=185,
         )
         layout.addWidget(self.canvas_recortes)
+        layout.addStretch(1)
         return tab
 
     def _crear_tab_scrollable(self):
@@ -604,6 +616,7 @@ class VentanaPrincipal(QMainWindow):
         scroll.setObjectName("TabScrollArea")
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setStyleSheet("background: white; border: none;")
         scroll.viewport().setStyleSheet("background: white;")
 
@@ -668,9 +681,9 @@ class VentanaPrincipal(QMainWindow):
         self.combo_dominio_suavizado.currentTextChanged.connect(lambda _: self._actualizar_resumen_flujo())
         bloque.addWidget(self.combo_dominio_suavizado)
 
-        lbl_suavizado = QLabel("Suavizado")
-        lbl_suavizado.setObjectName("CardHint")
-        bloque.addWidget(lbl_suavizado)
+        self.lbl_suavizado = QLabel("Suavizado")
+        self.lbl_suavizado.setObjectName("CardHint")
+        bloque.addWidget(self.lbl_suavizado)
 
         self.combo_suavizado = ComboSoloDropdown()
         self.combo_suavizado.addItems(["Media", "Mediana", "Moda"])
@@ -692,21 +705,25 @@ class VentanaPrincipal(QMainWindow):
         self.sl_mascara.valueChanged.connect(self._on_mascara)
         bloque.addWidget(self.sl_mascara)
 
-        lbl_d0_suavizado = QLabel("D0")
-        lbl_d0_suavizado.setObjectName("CardHint")
-        bloque.addWidget(lbl_d0_suavizado)
+        self.lbl_modo_suavizado = QLabel("Pasa-bajas gaussiano")
+        self.lbl_modo_suavizado.setObjectName("CardHint")
+        bloque.addWidget(self.lbl_modo_suavizado)
 
-        self.lbl_d0 = QLabel("D0 45 px")
-        self.lbl_d0.setObjectName("ValueBadge")
-        bloque.addWidget(self.lbl_d0, alignment=Qt.AlignLeft)
+        self.lbl_d0_suavizado = QLabel("D0 de suavizado")
+        self.lbl_d0_suavizado.setObjectName("CardHint")
+        bloque.addWidget(self.lbl_d0_suavizado)
 
-        self.sl_d0 = QSlider(Qt.Horizontal)
-        self.sl_d0.setRange(1, 180)
-        self.sl_d0.setValue(45)
-        self.sl_d0.setStyleSheet(estilo_slider("#F2B15E"))
-        self.sl_d0.valueChanged.connect(self._actualizar_lbl_d0)
-        self.sl_d0.valueChanged.connect(lambda _: self._actualizar_resumen_flujo())
-        bloque.addWidget(self.sl_d0)
+        self.lbl_d0_suavizado_valor = QLabel("D0 45 px")
+        self.lbl_d0_suavizado_valor.setObjectName("ValueBadge")
+        bloque.addWidget(self.lbl_d0_suavizado_valor, alignment=Qt.AlignLeft)
+
+        self.sl_d0_suavizado = QSlider(Qt.Horizontal)
+        self.sl_d0_suavizado.setRange(1, 180)
+        self.sl_d0_suavizado.setValue(45)
+        self.sl_d0_suavizado.setStyleSheet(estilo_slider("#F2B15E"))
+        self.sl_d0_suavizado.valueChanged.connect(self._actualizar_lbl_d0_suavizado)
+        self.sl_d0_suavizado.valueChanged.connect(lambda _: self._actualizar_resumen_flujo())
+        bloque.addWidget(self.sl_d0_suavizado)
 
         layout_principal.addWidget(tarjeta)
 
@@ -722,14 +739,34 @@ class VentanaPrincipal(QMainWindow):
         self.combo_dominio_acentuado.currentTextChanged.connect(lambda _: self._actualizar_resumen_flujo())
         bloque.addWidget(self.combo_dominio_acentuado)
 
-        lbl_acentuado = QLabel("Operador")
-        lbl_acentuado.setObjectName("CardHint")
-        bloque.addWidget(lbl_acentuado)
+        self.lbl_acentuado = QLabel("Operador")
+        self.lbl_acentuado.setObjectName("CardHint")
+        bloque.addWidget(self.lbl_acentuado)
 
         self.combo_acentuado = ComboSoloDropdown()
         self.combo_acentuado.addItems(["Roberts", "Prewitt", "Sobel", "Laplaciano"])
         self.combo_acentuado.currentTextChanged.connect(lambda _: self._actualizar_resumen_flujo())
         bloque.addWidget(self.combo_acentuado)
+
+        self.lbl_modo_acentuado = QLabel("Pasa-altas gaussiano")
+        self.lbl_modo_acentuado.setObjectName("CardHint")
+        bloque.addWidget(self.lbl_modo_acentuado)
+
+        self.lbl_d0_acentuado = QLabel("D0 de acentuado")
+        self.lbl_d0_acentuado.setObjectName("CardHint")
+        bloque.addWidget(self.lbl_d0_acentuado)
+
+        self.lbl_d0_acentuado_valor = QLabel("D0 45 px")
+        self.lbl_d0_acentuado_valor.setObjectName("ValueBadge")
+        bloque.addWidget(self.lbl_d0_acentuado_valor, alignment=Qt.AlignLeft)
+
+        self.sl_d0_acentuado = QSlider(Qt.Horizontal)
+        self.sl_d0_acentuado.setRange(1, 180)
+        self.sl_d0_acentuado.setValue(45)
+        self.sl_d0_acentuado.setStyleSheet(estilo_slider("#F2B15E"))
+        self.sl_d0_acentuado.valueChanged.connect(self._actualizar_lbl_d0_acentuado)
+        self.sl_d0_acentuado.valueChanged.connect(lambda _: self._actualizar_resumen_flujo())
+        bloque.addWidget(self.sl_d0_acentuado)
 
         layout_principal.addWidget(tarjeta)
 
@@ -753,37 +790,50 @@ class VentanaPrincipal(QMainWindow):
         bloque.addWidget(lbl_gradiente)
 
         self.combo_gradiente = ComboSoloDropdown()
-        self.combo_gradiente.addItems(["Roberts", "Prewitt", "Sobel", "Laplaciano"])
+        self.combo_gradiente.addItems(["Roberts", "Prewitt", "Sobel", "Kirsch", "Laplaciano"])
         self.combo_gradiente.currentTextChanged.connect(lambda _: self._actualizar_resumen_flujo())
         bloque.addWidget(self.combo_gradiente)
 
-        lbl_min_area = QLabel("Área mínima")
-        lbl_min_area.setObjectName("CardHint")
-        bloque.addWidget(lbl_min_area)
+        fila_area = QHBoxLayout()
+        fila_area.setSpacing(8)
+
+        lbl_area = QLabel("Área(px)")
+        lbl_area.setObjectName("CardHint")
+        fila_area.addWidget(lbl_area)
+
+        lbl_desde = QLabel("De")
+        lbl_desde.setObjectName("CardHint")
+        fila_area.addWidget(lbl_desde)
 
         self.spin_min_area = QSpinBox()
         self.spin_min_area.setRange(1, 999999)
         self.spin_min_area.setValue(50)
         self.spin_min_area.valueChanged.connect(lambda _: self._actualizar_resumen_flujo())
-        bloque.addWidget(self.spin_min_area)
+        fila_area.addWidget(self.spin_min_area)
 
-        lbl_max_area = QLabel("Área máxima (0 = sin límite)")
-        lbl_max_area.setObjectName("CardHint")
-        bloque.addWidget(lbl_max_area)
+        lbl_hasta = QLabel("a")
+        lbl_hasta.setObjectName("CardHint")
+        fila_area.addWidget(lbl_hasta)
 
         self.spin_max_area = QSpinBox()
         self.spin_max_area.setRange(0, 999999)
         self.spin_max_area.setValue(0)
+        self.spin_max_area.setSpecialValueText("sin límite")
         self.spin_max_area.valueChanged.connect(lambda _: self._actualizar_resumen_flujo())
-        bloque.addWidget(self.spin_max_area)
+        fila_area.addWidget(self.spin_max_area)
+
+        bloque.addLayout(fila_area)
 
         layout_principal.addWidget(tarjeta)
 
     def _actualizar_lbl_ruido(self, valor):
         self.lbl_ruido.setText(f"{valor} %")
 
-    def _actualizar_lbl_d0(self, valor):
-        self.lbl_d0.setText(f"D0 {valor} px")
+    def _actualizar_lbl_d0_suavizado(self, valor):
+        self.lbl_d0_suavizado_valor.setText(f"D0 {valor} px")
+
+    def _actualizar_lbl_d0_acentuado(self, valor):
+        self.lbl_d0_acentuado_valor.setText(f"D0 {valor} px")
 
     def _actualizar_opciones_kernel(self, maximo):
         if maximo % 2 == 0:
@@ -800,11 +850,17 @@ class VentanaPrincipal(QMainWindow):
         maximo = max(10, min(alto, ancho) // 2)
         sugerido = max(10, min(maximo, maximo // 3))
 
-        self.sl_d0.blockSignals(True)
-        self.sl_d0.setRange(1, maximo)
-        self.sl_d0.setValue(sugerido)
-        self.sl_d0.blockSignals(False)
-        self._actualizar_lbl_d0(sugerido)
+        self.sl_d0_suavizado.blockSignals(True)
+        self.sl_d0_suavizado.setRange(1, maximo)
+        self.sl_d0_suavizado.setValue(sugerido)
+        self.sl_d0_suavizado.blockSignals(False)
+        self._actualizar_lbl_d0_suavizado(sugerido)
+
+        self.sl_d0_acentuado.blockSignals(True)
+        self.sl_d0_acentuado.setRange(1, maximo)
+        self.sl_d0_acentuado.setValue(sugerido)
+        self.sl_d0_acentuado.blockSignals(False)
+        self._actualizar_lbl_d0_acentuado(sugerido)
 
     def _actualizar_opciones_area(self, alto, ancho):
         total = max(1, alto * ancho)
@@ -842,23 +898,23 @@ class VentanaPrincipal(QMainWindow):
 
     def _on_dominio_suavizado(self, dominio):
         es_espacial = dominio == "Espacial"
-        self.combo_suavizado.setEnabled(es_espacial)
-        self.sl_mascara.setEnabled(es_espacial)
-        self.lbl_kernel.setEnabled(es_espacial)
-        self._actualizar_estado_d0()
+        self.lbl_suavizado.setVisible(es_espacial)
+        self.combo_suavizado.setVisible(es_espacial)
+        self.lbl_kernel.setVisible(es_espacial)
+        self.sl_mascara.setVisible(es_espacial)
+        self.lbl_modo_suavizado.setVisible(not es_espacial)
+        self.lbl_d0_suavizado.setVisible(not es_espacial)
+        self.lbl_d0_suavizado_valor.setVisible(not es_espacial)
+        self.sl_d0_suavizado.setVisible(not es_espacial)
 
     def _on_dominio_acentuado(self, dominio):
         es_espacial = dominio == "Espacial"
-        self.combo_acentuado.setEnabled(es_espacial)
-        self._actualizar_estado_d0()
-
-    def _actualizar_estado_d0(self):
-        usa_frecuencia = (
-            self.combo_dominio_suavizado.currentText() == "Frecuencial"
-            or self.combo_dominio_acentuado.currentText() == "Frecuencial"
-        )
-        self.lbl_d0.setEnabled(usa_frecuencia)
-        self.sl_d0.setEnabled(usa_frecuencia)
+        self.lbl_acentuado.setVisible(es_espacial)
+        self.combo_acentuado.setVisible(es_espacial)
+        self.lbl_modo_acentuado.setVisible(not es_espacial)
+        self.lbl_d0_acentuado.setVisible(not es_espacial)
+        self.lbl_d0_acentuado_valor.setVisible(not es_espacial)
+        self.sl_d0_acentuado.setVisible(not es_espacial)
 
     def _actualizar_resumen_flujo(self):
         if not hasattr(self, "lbl_flujo"):
@@ -877,17 +933,19 @@ class VentanaPrincipal(QMainWindow):
 
         ruido = getattr(self, "sl_ruido", None)
         umbral = getattr(self, "sl_umbral", None)
-        d0 = getattr(self, "sl_d0", None)
+        d0_suavizado = getattr(self, "sl_d0_suavizado", None)
+        d0_acentuado = getattr(self, "sl_d0_acentuado", None)
         ruido_txt = f"{ruido.value()}%" if ruido else "0%"
         umbral_txt = str(umbral.value()) if umbral else "128"
-        d0_txt = str(d0.value()) if d0 else "45"
+        d0_suavizado_txt = str(d0_suavizado.value()) if d0_suavizado else "45"
+        d0_acentuado_txt = str(d0_acentuado.value()) if d0_acentuado else "45"
         max_area_txt = str(max_area.value()) if max_area.value() > 0 else "sin límite"
 
         self.lbl_flujo.setText(
             "Activos: "
             f"R {ruido_txt} | "
-            f"S {dominio_suavizado.currentText()}/{suavizado.currentText() if dominio_suavizado.currentText() == 'Espacial' else f'D0 {d0_txt}'} | "
-            f"A {dominio_acentuado.currentText()}/{acentuado.currentText() if dominio_acentuado.currentText() == 'Espacial' else f'D0 {d0_txt}'} | "
+            f"S {dominio_suavizado.currentText()}/{suavizado.currentText() if dominio_suavizado.currentText() == 'Espacial' else f'D0 {d0_suavizado_txt}'} | "
+            f"A {dominio_acentuado.currentText()}/{acentuado.currentText() if dominio_acentuado.currentText() == 'Espacial' else f'D0 {d0_acentuado_txt}'} | "
             f"G {gradiente.currentText()} | "
             f"U {umbral_txt} | "
             f"Á {min_area.value()}-{max_area_txt}"
@@ -960,7 +1018,8 @@ class VentanaPrincipal(QMainWindow):
         self.lbl_estado.setText("Carga una imagen para empezar.")
         self.sl_ruido.setValue(5)
         self.sl_mascara.setValue(3)
-        self.sl_d0.setValue(45)
+        self.sl_d0_suavizado.setValue(45)
+        self.sl_d0_acentuado.setValue(45)
         self.sl_umbral.setValue(128)
         self.spin_min_area.setValue(50)
         self.spin_max_area.setValue(0)
@@ -989,7 +1048,8 @@ class VentanaPrincipal(QMainWindow):
             img_rgb=self.img_rgb.copy(),
             ruido=self.sl_ruido.value() / 100.0,
             mascara=self._kernel_actual(),
-            d0=self.sl_d0.value(),
+            d0_suavizado=self.sl_d0_suavizado.value(),
+            d0_acentuado=self.sl_d0_acentuado.value(),
             dominio_suavizado=self.combo_dominio_suavizado.currentText(),
             tipo_suavizado=self.combo_suavizado.currentText(),
             dominio_acentuado=self.combo_dominio_acentuado.currentText(),
@@ -1017,21 +1077,21 @@ class VentanaPrincipal(QMainWindow):
         self.canvas_suavizado.actualizar_titulos(
             [
                 f"Ruido sal y pimienta ({resultado.ruido_porcentaje} %)",
-                f"Suavizado {resultado.dominio_suavizado} / {filtro if resultado.dominio_suavizado == 'Espacial' else f'D0={resultado.d0}'}",
+                f"Suavizado {resultado.dominio_suavizado} / {filtro if resultado.dominio_suavizado == 'Espacial' else f'D0={resultado.d0_suavizado}'}",
             ]
         )
         self.canvas_suavizado.actualizar(datos)
         self.canvas_acentuado.actualizar_titulos(
             [
-                "Entrada suavizada",
-                f"Acentuado {resultado.dominio_acentuado} / {resultado.tipo_acentuado if resultado.dominio_acentuado == 'Espacial' else f'D0={resultado.d0}'}",
+                "Base suavizada",
+                f"Acentuado {resultado.dominio_acentuado} / {resultado.tipo_acentuado if resultado.dominio_acentuado == 'Espacial' else f'D0={resultado.d0_acentuado}'}",
             ]
         )
         self.canvas_acentuado.actualizar(datos)
         self.canvas_binarizacion.actualizar_titulos(
             [
                 f"Acentuado {resultado.dominio_acentuado}",
-                f"Binarizada (umbral={resultado.umbral})",
+                f"Máscara binaria (umbral={resultado.umbral})",
             ]
         )
         self.canvas_binarizacion.actualizar(datos)
@@ -1075,7 +1135,7 @@ class VentanaPrincipal(QMainWindow):
         self.canvas_regiones.actualizar(datos)
         self.canvas_recortes.actualizar_titulos(
             [
-                f"Submatrices normalizadas — entrada al clasificador ({n} recortes)",
+                f"Submatrices normalizadas para clasificación ({n} recortes)",
             ]
         )
         self.canvas_recortes.actualizar(datos)

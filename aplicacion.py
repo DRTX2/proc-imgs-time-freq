@@ -11,7 +11,8 @@ class ParametrosProcesamiento:
     img_rgb: Any
     ruido: float
     mascara: int
-    d0: int
+    d0_suavizado: int
+    d0_acentuado: int
     dominio_suavizado: str
     tipo_suavizado: str
     dominio_acentuado: str
@@ -63,7 +64,8 @@ class ResultadoProcesamiento:
     tipo_acentuado: str
     tipo_gradiente: str
     mascara: int
-    d0: int
+    d0_suavizado: int
+    d0_acentuado: int
     ruido_porcentaje: int
 
     def a_diccionario(self):
@@ -106,7 +108,8 @@ class ResultadoProcesamiento:
             "tipo_acentuado": self.tipo_acentuado,
             "tipo_gradiente": self.tipo_gradiente,
             "mascara": self.mascara,
-            "d0": self.d0,
+            "d0_suavizado": self.d0_suavizado,
+            "d0_acentuado": self.d0_acentuado,
             "ruido_porcentaje": self.ruido_porcentaje,
         }
 
@@ -136,12 +139,12 @@ class ProcesadorImagen:
             parametros.dominio_suavizado,
             parametros.tipo_suavizado,
             parametros.mascara,
-            parametros.d0,
+            parametros.d0_suavizado,
         )
         diagnostico_suavizado = self._diagnostico_suavizado(
             img_ruido,
             parametros.dominio_suavizado,
-            parametros.d0,
+            parametros.d0_suavizado,
         )
         mapa_cambio = self.modelo.diferencia_absoluta_manual(img_ruido, imagen_suavizada)
         print(f"[pipeline] Suavizado listo: {parametros.dominio_suavizado} / {parametros.tipo_suavizado}.")
@@ -150,12 +153,12 @@ class ProcesadorImagen:
             imagen_suavizada,
             parametros.dominio_acentuado,
             parametros.tipo_acentuado,
-            parametros.d0,
+            parametros.d0_acentuado,
         )
         diagnostico_acentuado = self._diagnostico_acentuado(
             imagen_suavizada,
             parametros.dominio_acentuado,
-            parametros.d0,
+            parametros.d0_acentuado,
         )
         print(f"[pipeline] Acentuado listo: {parametros.dominio_acentuado} / {parametros.tipo_acentuado}.")
 
@@ -222,7 +225,8 @@ class ProcesadorImagen:
             tipo_acentuado=parametros.tipo_acentuado,
             tipo_gradiente=parametros.tipo_gradiente,
             mascara=parametros.mascara,
-            d0=parametros.d0,
+            d0_suavizado=parametros.d0_suavizado,
+            d0_acentuado=parametros.d0_acentuado,
             ruido_porcentaje=int(round(parametros.ruido * 100)),
         )
 
@@ -286,4 +290,6 @@ class ProcesadorImagen:
             return gradientes["prewitt_grad"]
         if tipo_filtro == "Sobel":
             return gradientes["sobel_grad"]
+        if tipo_filtro == "Kirsch":
+            return gradientes["kirsch_grad"]
         return gradientes["laplaciano_grad"]
