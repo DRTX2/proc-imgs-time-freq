@@ -176,14 +176,22 @@ class ProcesadorImagen:
         )
         print(f"[pipeline] Gradiente final listo: {parametros.tipo_gradiente}.")
 
+        mascara_regiones = self.modelo.limpiar_mascara_regiones(img_gradiente_binario)
         max_area = parametros.max_area if parametros.max_area > 0 else None
-        regiones = self.modelo.etiquetar_regiones_bfs(
-            img_gradiente_binario,
+        regiones_base = self.modelo.etiquetar_regiones_bfs(
+            mascara_regiones,
             parametros.min_area,
             max_area,
         )
+        alto_mascara, ancho_mascara = mascara_regiones.shape
+        regiones = self.modelo.filtrar_regiones_utiles(
+            regiones_base,
+            alto_mascara,
+            ancho_mascara,
+            max_area,
+        )
         img_bboxes = self.modelo.dibujar_bounding_boxes_sobre_imagen(parametros.img_rgb, regiones)
-        recortes_tira = self.modelo.componer_tira_recortes(img_gradiente_binario, regiones)
+        recortes_tira = self.modelo.componer_tira_recortes(mascara_regiones, regiones)
         print(f"[pipeline] Binarización lista. Regiones: {len(regiones)}")
 
         print("[pipeline] Todo el proceso termino bien.")
@@ -211,7 +219,7 @@ class ProcesadorImagen:
             mascara_pasaaltas=diagnostico_acentuado["mascara"],
             espectro_filtrado_pa=diagnostico_acentuado["espectro_filtrado"],
             pasaaltas_resultado=diagnostico_acentuado["salida"],
-            binaria=img_gradiente_binario,
+            binaria=mascara_regiones,
             bboxes=img_bboxes,
             recortes_tira=recortes_tira,
             n_regiones=len(regiones),

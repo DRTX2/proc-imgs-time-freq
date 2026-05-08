@@ -1,3 +1,13 @@
+"""
+Procesamiento digital de imágenes con algoritmos desarrollados a mano.
+
+Las imágenes se guardan en arreglos de NumPy porque PySide, Matplotlib y OpenCV
+trabajan naturalmente con ese formato. Los algoritmos de la práctica, en cambio,
+se recorren pixel a pixel para que el procedimiento sea visible en el código.
+Las excepciones son la carga de archivos y la FFT, donde la librería funciona
+como herramienta matemática base.
+"""
+
 import math
 import random
 
@@ -74,13 +84,19 @@ class ModeloImagen:
     def etiquetar_regiones_bfs(self, imagen_binaria, min_area=50, max_area=None):
         return etiquetar_regiones_bfs(imagen_binaria, min_area, max_area)
 
+    def limpiar_mascara_regiones(self, imagen_binaria):
+        return limpiar_mascara_regiones(imagen_binaria)
+
+    def filtrar_regiones_utiles(self, regiones, alto, ancho, max_area=None):
+        return filtrar_regiones_utiles(regiones, alto, ancho, max_area)
+
     def dibujar_bounding_boxes(self, imagen_binaria, regiones):
         return dibujar_bounding_boxes(imagen_binaria, regiones)
 
     def dibujar_bounding_boxes_sobre_imagen(self, imagen_base, regiones):
         return dibujar_bounding_boxes_sobre_imagen(imagen_base, regiones)
 
-    def componer_tira_recortes(self, imagen, regiones, tamano=64, separacion=4):
+    def componer_tira_recortes(self, imagen, regiones, tamano=64, separacion=6):
         return componer_tira_recortes(imagen, regiones, tamano, separacion)
 
 
@@ -269,7 +285,6 @@ def convolucionar_manual_grises(imagen, mascara):
 
 def filtro_media(imagen, tamano_mascara):
     """Filtro de media aplicado por canal cuando la imagen es RGB."""
-    # Suaviza promediando los valores de cada vecindad.
     print(f"[modelo] Aplicando filtro de media con mascara {tamano_mascara}x{tamano_mascara}...")
     mascara = crear_mascara_media(tamano_mascara)
     return aplicar_por_canal(imagen, lambda canal: convolucionar_manual_grises(canal, mascara))
@@ -277,20 +292,18 @@ def filtro_media(imagen, tamano_mascara):
 
 def filtro_mediana(imagen, tamano_mascara):
     """Filtro de mediana aplicado por canal."""
-    # Reduce ruido impulsivo sin depender de una funcion de mediana externa.
     print(f"[modelo] Aplicando filtro de mediana con mascara {tamano_mascara}x{tamano_mascara}...")
     return aplicar_por_canal(imagen, lambda canal: filtro_mediana_grises(canal, tamano_mascara))
 
 
 def filtro_moda(imagen, tamano_mascara):
     """Filtro de moda aplicado por canal."""
-    # En imagenes binarias conserva el valor predominante de la vecindad.
     print(f"[modelo] Aplicando filtro de moda con mascara {tamano_mascara}x{tamano_mascara}...")
     return aplicar_por_canal(imagen, lambda canal: filtro_moda_grises(canal, tamano_mascara))
 
 
 def aplicar_por_canal(imagen, funcion_canal):
-    """Aplica una función a cada canal si la imagen es RGB."""
+    """Aplica una función a cada canal sin usar operaciones vectorizadas."""
     if imagen.ndim == 2:
         return funcion_canal(imagen)
 
@@ -298,7 +311,15 @@ def aplicar_por_canal(imagen, funcion_canal):
     resultado = np.zeros((alto, ancho, canales), dtype=np.uint8)
 
     for canal in range(canales):
-        resultado[:, :, canal] = funcion_canal(imagen[:, :, canal])
+        canal_original = np.zeros((alto, ancho), dtype=np.uint8)
+        for fila in range(alto):
+            for columna in range(ancho):
+                canal_original[fila, columna] = imagen[fila, columna, canal]
+
+        canal_filtrado = funcion_canal(canal_original)
+        for fila in range(alto):
+            for columna in range(ancho):
+                resultado[fila, columna, canal] = canal_filtrado[fila, columna]
 
     return resultado
 
@@ -419,13 +440,21 @@ def espectro_log(espectro_complejo):
 
 def normalizar_matriz_uint8(matriz):
     """Normaliza cualquier matriz real al rango [0, 255]."""
-    minimo = float(matriz.min())
-    maximo = float(matriz.max())
+    alto, ancho = matriz.shape
+    minimo = float(matriz[0, 0])
+    maximo = minimo
+
+    for fila in range(alto):
+        for columna in range(ancho):
+            valor = float(matriz[fila, columna])
+            if valor < minimo:
+                minimo = valor
+            if valor > maximo:
+                maximo = valor
 
     if maximo == minimo:
         return np.zeros(matriz.shape, dtype=np.uint8)
 
-    alto, ancho = matriz.shape
     resultado = np.zeros((alto, ancho), dtype=np.uint8)
 
     for fila in range(alto):
@@ -440,6 +469,33 @@ def normalizar_matriz_uint8(matriz):
     return resultado
 
 
+def matriz_absoluta_manual(matriz):
+    """Calcula valor absoluto elemento por elemento."""
+    alto, ancho = matriz.shape
+    resultado = np.zeros((alto, ancho), dtype=np.float64)
+
+    for fila in range(alto):
+        for columna in range(ancho):
+            valor = float(matriz[fila, columna])
+            if valor < 0:
+                valor = -valor
+            resultado[fila, columna] = valor
+
+    return resultado
+
+
+def parte_real_manual(matriz_compleja):
+    """Extrae la parte real de una matriz compleja con un recorrido explícito."""
+    alto, ancho = matriz_compleja.shape
+    resultado = np.zeros((alto, ancho), dtype=np.float64)
+
+    for fila in range(alto):
+        for columna in range(ancho):
+            resultado[fila, columna] = matriz_compleja[fila, columna].real
+
+    return resultado
+
+
 def filtrar_frecuencia_matriz(imagen, d0):
     """Aplica el filtrado gaussiano a una matriz 2D y devuelve también sus diagnósticos."""
     alto, ancho = imagen.shape
@@ -448,7 +504,7 @@ def filtrar_frecuencia_matriz(imagen, d0):
     mascara = crear_filtro_gaussiano(alto, ancho, d0)
     espectro_filtrado = aplicar_filtro_frecuencia(espectro_centrado, mascara)
     reconstruida = np.fft.ifft2(np.fft.ifftshift(espectro_filtrado))
-    resultado = normalizar_matriz_uint8(np.real(reconstruida))
+    resultado = normalizar_matriz_uint8(parte_real_manual(reconstruida))
     return resultado, espectro_centrado, espectro_filtrado, mascara
 
 
@@ -876,7 +932,7 @@ def _componentes_roberts(imagen):
             gy[fila, columna] = valor_gy
             magnitud[fila, columna] = min(int(math.sqrt(valor_gx * valor_gx + valor_gy * valor_gy)), 255)
 
-    return normalizar_matriz_uint8(np.abs(gx)), normalizar_matriz_uint8(np.abs(gy)), magnitud
+    return normalizar_matriz_uint8(matriz_absoluta_manual(gx)), normalizar_matriz_uint8(matriz_absoluta_manual(gy)), magnitud
 
 
 def _componentes_prewitt(imagen):
@@ -900,7 +956,7 @@ def _componentes_prewitt(imagen):
             gy[fila, columna] = suma_gy
             magnitud[fila, columna] = min(int(math.sqrt(suma_gx * suma_gx + suma_gy * suma_gy)), 255)
 
-    return normalizar_matriz_uint8(np.abs(gx)), normalizar_matriz_uint8(np.abs(gy)), magnitud
+    return normalizar_matriz_uint8(matriz_absoluta_manual(gx)), normalizar_matriz_uint8(matriz_absoluta_manual(gy)), magnitud
 
 
 def _componentes_sobel(imagen):
@@ -924,7 +980,7 @@ def _componentes_sobel(imagen):
             gy[fila, columna] = suma_gy
             magnitud[fila, columna] = min(int(math.sqrt(suma_gx * suma_gx + suma_gy * suma_gy)), 255)
 
-    return normalizar_matriz_uint8(np.abs(gx)), normalizar_matriz_uint8(np.abs(gy)), magnitud
+    return normalizar_matriz_uint8(matriz_absoluta_manual(gx)), normalizar_matriz_uint8(matriz_absoluta_manual(gy)), magnitud
 
 
 def _kernels_kirsch():
@@ -960,8 +1016,8 @@ def _componentes_kirsch(imagen):
             maximo[fila, columna] = min(int(max_resp), 255)
 
     return (
-        normalizar_matriz_uint8(np.abs(respuesta_0)),
-        normalizar_matriz_uint8(np.abs(respuesta_90)),
+        normalizar_matriz_uint8(matriz_absoluta_manual(respuesta_0)),
+        normalizar_matriz_uint8(matriz_absoluta_manual(respuesta_90)),
         maximo,
     )
 
@@ -981,7 +1037,7 @@ def _componentes_laplaciano(imagen):
 
     return (
         normalizar_matriz_uint8(respuesta),
-        normalizar_matriz_uint8(np.abs(respuesta)),
+        normalizar_matriz_uint8(matriz_absoluta_manual(respuesta)),
         normalizar_matriz_uint8(respuesta),
     )
 
@@ -1004,7 +1060,7 @@ def filtro_frecuencia_pasaaltas(imagen, d0):
                 mascara_pa[fila, columna] = 1.0 - mascara_pb[fila, columna]
         espectro_filtrado = aplicar_filtro_frecuencia(espectro_centrado, mascara_pa)
         reconstruida = np.fft.ifft2(np.fft.ifftshift(espectro_filtrado))
-        return normalizar_matriz_uint8(np.real(reconstruida))
+        return normalizar_matriz_uint8(parte_real_manual(reconstruida))
 
     return aplicar_por_canal(imagen, _canal_pasaaltas)
 
@@ -1027,7 +1083,7 @@ def diagnostico_pasaaltas(imagen, d0):
             mascara_pa[fila, columna] = 1.0 - mascara_pb[fila, columna]
     espectro_filtrado = aplicar_filtro_frecuencia(espectro_centrado, mascara_pa)
     reconstruida = np.fft.ifft2(np.fft.ifftshift(espectro_filtrado))
-    resultado = normalizar_matriz_uint8(np.real(reconstruida))
+    resultado = normalizar_matriz_uint8(parte_real_manual(reconstruida))
 
     return {
         "espectro_original_pa": espectro_log(espectro_centrado),
@@ -1123,11 +1179,15 @@ def etiquetar_regiones_bfs(imagen_binaria, min_area=50, max_area=None):
                         perimetro += 1
 
                 label += 1
+                alto_bbox = fila_max - fila_min + 1
+                ancho_bbox = col_max - col_min + 1
                 regiones.append({
                     "label":     label,
                     "area":      area,
                     "perimetro": perimetro,
                     "bbox":      (fila_min, col_min, fila_max, col_max),
+                    "alto":      alto_bbox,
+                    "ancho":     ancho_bbox,
                     "pixeles":   pixeles,
                 })
 
@@ -1138,6 +1198,126 @@ def etiquetar_regiones_bfs(imagen_binaria, min_area=50, max_area=None):
 
     print(f"[modelo] Regiones encontradas: {len(regiones)}")
     return regiones
+
+
+def limpiar_mascara_regiones(imagen_binaria):
+    """
+    Suaviza el mapa de bordes antes de buscar componentes.
+    Se conserva un píxel blanco solo si pertenece a una pequeña vecindad de borde.
+    """
+    alto, ancho = imagen_binaria.shape
+    resultado = np.zeros((alto, ancho), dtype=np.uint8)
+
+    for fila in range(alto):
+        for columna in range(ancho):
+            if imagen_binaria[fila, columna] != 255:
+                continue
+
+            vecinos_blancos = 0
+            for df in range(-1, 2):
+                for dc in range(-1, 2):
+                    if df == 0 and dc == 0:
+                        continue
+                    nf = fila + df
+                    nc = columna + dc
+                    if 0 <= nf < alto and 0 <= nc < ancho:
+                        if imagen_binaria[nf, nc] == 255:
+                            vecinos_blancos += 1
+
+            if vecinos_blancos >= 2:
+                resultado[fila, columna] = 255
+
+    return resultado
+
+
+def filtrar_regiones_utiles(regiones, alto, ancho, max_area=None):
+    """
+    Descarta componentes que suelen venir del marco de la placa o del ruido fino.
+    La idea es que el clasificador reciba objetos compactos, no el contorno entero.
+    """
+    total_pixeles = alto * ancho
+    filtradas = []
+    regiones_caracter = []
+
+    for region in regiones:
+        f0, c0, f1, c1 = region["bbox"]
+        alto_bbox = f1 - f0 + 1
+        ancho_bbox = c1 - c0 + 1
+        area_bbox = alto_bbox * ancho_bbox
+        area = region["area"]
+        centro_fila = (f0 + f1) / 2.0
+        relacion = ancho_bbox / alto_bbox if alto_bbox > 0 else 0
+
+        if alto_bbox < 5 or ancho_bbox < 3:
+            continue
+        if max_area is None and area_bbox > total_pixeles * 0.18:
+            continue
+        if ancho_bbox > ancho * 0.55:
+            continue
+        if alto_bbox > alto * 0.80:
+            continue
+        if area_bbox > 0 and area / area_bbox < 0.02:
+            continue
+
+        filtradas.append(region)
+        if (
+            centro_fila >= alto * 0.36
+            and centro_fila <= alto * 0.92
+            and alto_bbox >= alto * 0.12
+            and alto_bbox <= alto * 0.65
+            and relacion >= 0.12
+            and relacion <= 1.35
+        ):
+            regiones_caracter.append(region)
+
+    if not filtradas:
+        return regiones
+
+    candidatas = regiones_caracter if regiones_caracter else filtradas
+    if len(candidatas) > 16:
+        candidatas = seleccionar_regiones_mas_relevantes(candidatas, 16)
+
+    ordenar_regiones_lectura(candidatas)
+    return candidatas
+
+
+def seleccionar_regiones_mas_relevantes(regiones, limite):
+    """Conserva las regiones con mayor área cuando aún hay demasiados candidatos."""
+    seleccionadas = []
+    usadas = [False] * len(regiones)
+
+    while len(seleccionadas) < limite and len(seleccionadas) < len(regiones):
+        mejor_indice = -1
+        mejor_area = -1
+        for indice in range(len(regiones)):
+            if usadas[indice]:
+                continue
+            area = regiones[indice]["area"]
+            if area > mejor_area:
+                mejor_area = area
+                mejor_indice = indice
+
+        if mejor_indice == -1:
+            break
+        usadas[mejor_indice] = True
+        seleccionadas.append(regiones[mejor_indice])
+
+    return seleccionadas
+
+
+def ordenar_regiones_lectura(regiones):
+    """Ordena de arriba hacia abajo y de izquierda a derecha."""
+    for i in range(1, len(regiones)):
+        actual = regiones[i]
+        posicion = i - 1
+        fila_actual, col_actual = actual["bbox"][0], actual["bbox"][1]
+        while posicion >= 0:
+            fila_prev, col_prev = regiones[posicion]["bbox"][0], regiones[posicion]["bbox"][1]
+            if fila_prev < fila_actual or (fila_prev == fila_actual and col_prev <= col_actual):
+                break
+            regiones[posicion + 1] = regiones[posicion]
+            posicion -= 1
+        regiones[posicion + 1] = actual
 
 
 def dibujar_bounding_boxes(imagen_binaria, regiones):
@@ -1209,32 +1389,89 @@ def dibujar_bounding_boxes_sobre_imagen(imagen_base, regiones):
     return rgb
 
 
-def componer_tira_recortes(imagen, regiones, tamano=64, separacion=4):
-    """Extrae cada bbox, lo redimensiona y lo compone en una sola tira horizontal."""
+def extraer_recorte_gris(imagen, bbox):
+    """Copia una región rectangular sin usar slicing de NumPy."""
+    f0, c0, f1, c1 = bbox
+    alto = f1 - f0 + 1
+    ancho = c1 - c0 + 1
+    recorte = np.zeros((alto, ancho), dtype=np.uint8)
+
+    for fila in range(alto):
+        for columna in range(ancho):
+            recorte[fila, columna] = imagen[f0 + fila, c0 + columna]
+
+    return recorte
+
+
+def redimensionar_vecino_mas_cercano(imagen, nuevo_alto, nuevo_ancho):
+    """
+    Redimensiona con vecino más cercano usando proporciones enteras.
+    Es suficiente para los recortes binarios que entran al clasificador.
+    """
+    alto, ancho = imagen.shape
+    resultado = np.zeros((nuevo_alto, nuevo_ancho), dtype=np.uint8)
+
+    if alto == 0 or ancho == 0:
+        return resultado
+
+    for fila in range(nuevo_alto):
+        origen_fila = int(fila * alto / nuevo_alto)
+        if origen_fila >= alto:
+            origen_fila = alto - 1
+        for columna in range(nuevo_ancho):
+            origen_columna = int(columna * ancho / nuevo_ancho)
+            if origen_columna >= ancho:
+                origen_columna = ancho - 1
+            resultado[fila, columna] = imagen[origen_fila, origen_columna]
+
+    return resultado
+
+
+def componer_tira_recortes(imagen, regiones, tamano=64, separacion=6):
+    """Extrae cada bbox, lo redimensiona y lo compone como mosaico legible."""
     if not regiones:
         return np.zeros((tamano, tamano, 3), dtype=np.uint8)
 
     recortes = []
     for region in regiones:
-        f0, c0, f1, c1 = region["bbox"]
-        recorte = imagen[f0:f1 + 1, c0:c1 + 1]
-        if recorte.size == 0:
+        recorte = extraer_recorte_gris(imagen, region["bbox"])
+        if recorte.shape[0] == 0 or recorte.shape[1] == 0:
             continue
-        redim = cv2.resize(recorte, (tamano, tamano), interpolation=cv2.INTER_NEAREST)
+        redim = redimensionar_vecino_mas_cercano(recorte, tamano, tamano)
         recortes.append(redim)
 
     if not recortes:
         return np.zeros((tamano, tamano, 3), dtype=np.uint8)
 
-    ancho_total = len(recortes) * tamano + (len(recortes) - 1) * separacion
-    tira = np.full((tamano, ancho_total), 255, dtype=np.uint8)
+    columnas = 10
+    if len(recortes) < columnas:
+        columnas = len(recortes)
+    filas = len(recortes) // columnas
+    if len(recortes) % columnas != 0:
+        filas += 1
 
-    posicion = 0
-    for recorte in recortes:
-        tira[:, posicion:posicion + tamano] = recorte
-        posicion += tamano + separacion
+    alto_total = filas * tamano + (filas - 1) * separacion
+    ancho_total = columnas * tamano + (columnas - 1) * separacion
+    mosaico = np.zeros((alto_total, ancho_total), dtype=np.uint8)
+    for fila in range(alto_total):
+        for columna in range(ancho_total):
+            mosaico[fila, columna] = 245
 
-    rgb = np.zeros((tamano, ancho_total, 3), dtype=np.uint8)
-    for canal in range(3):
-        rgb[:, :, canal] = tira
+    for indice in range(len(recortes)):
+        recorte = recortes[indice]
+        fila_base = indice // columnas
+        columna_base = indice % columnas
+        inicio_fila = fila_base * (tamano + separacion)
+        inicio_columna = columna_base * (tamano + separacion)
+        for fila in range(tamano):
+            for columna in range(tamano):
+                mosaico[inicio_fila + fila, inicio_columna + columna] = recorte[fila, columna]
+
+    rgb = np.zeros((alto_total, ancho_total, 3), dtype=np.uint8)
+    for fila in range(alto_total):
+        for columna in range(ancho_total):
+            valor = mosaico[fila, columna]
+            rgb[fila, columna, 0] = valor
+            rgb[fila, columna, 1] = valor
+            rgb[fila, columna, 2] = valor
     return rgb

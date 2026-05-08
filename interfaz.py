@@ -528,7 +528,7 @@ class VentanaPrincipal(QMainWindow):
             [
                 {"tipo": "imagen", "clave": "binaria_acentuada", "titulo": "Binarizada post-acentuado"},
                 {"tipo": "imagen", "clave": "gradiente_final",   "titulo": "Gradiente seleccionado"},
-                {"tipo": "imagen", "clave": "binaria",           "titulo": "Bordes binarios finales"},
+                {"tipo": "imagen", "clave": "gradiente_binario", "titulo": "Bordes binarios finales"},
             ],
             1,
             3,
@@ -580,7 +580,7 @@ class VentanaPrincipal(QMainWindow):
 
         self.canvas_regiones = CanvasResultados(
             [
-                {"tipo": "imagen", "clave": "binaria", "titulo": "Mapa binario de bordes"},
+                {"tipo": "imagen", "clave": "binaria", "titulo": "Máscara de detección"},
                 {"tipo": "imagen", "clave": "bboxes",  "titulo": "Regiones detectadas"},
             ],
             1,
@@ -599,7 +599,9 @@ class VentanaPrincipal(QMainWindow):
             1,
             1,
             self,
-            altura=185,
+            altura=320,
+            altura_maxima=520,
+            expandible=True,
         )
         layout.addWidget(self.canvas_recortes)
         layout.addStretch(1)
@@ -977,7 +979,6 @@ class VentanaPrincipal(QMainWindow):
             return
 
         try:
-            # Cargar esto limpio ayuda bastante para revisar las demas etapas.
             self.img_rgb = modelo.cargar_imagen(ruta)
             alto, ancho = self.img_rgb.shape[:2]
             print(f"[ui] Imagen cargada en la interfaz: {Path(ruta).name}")
@@ -1099,7 +1100,7 @@ class VentanaPrincipal(QMainWindow):
             [
                 f"Binarizada (umbral={resultado.umbral})",
                 f"Gradiente {resultado.tipo_gradiente}",
-                "Bordes binarios finales",
+                "Bordes binarios sin filtrar",
             ]
         )
         self.canvas_gradiente.actualizar(datos)
@@ -1128,7 +1129,7 @@ class VentanaPrincipal(QMainWindow):
         )
         self.canvas_regiones.actualizar_titulos(
             [
-                f"Bordes binarios ({resultado.tipo_gradiente})",
+                f"Máscara filtrada ({resultado.tipo_gradiente})",
                 f"Bounding boxes ({n} regiones)",
             ]
         )
